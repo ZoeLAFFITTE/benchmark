@@ -1,0 +1,64 @@
+# ------------------------------------------------------------------
+# Output
+# ------------------------------------------------------------------
+
+output_dir: "/home/INT/laffitte.z/code/these/data/compar"
+
+# ------------------------------------------------------------------
+# Input data: HCP SPECIFIC FILES ORGANIZATION
+# ------------------------------------------------------------------
+
+data_dir: "/envau/work/meca/data/test_retest_datatbase/HCP_test_retest"
+atlas_dir: "/envau/work/meca/data/atlas_glasser2016/Glasser_et_al_2016_HCP_MMP1.0_kN_RVVG/Q1-Q6_RelatedValidation210/MNINonLinear/fsaverage_LR32k/Q1-Q6_RelatedValidation210"
+
+dir:
+  rawdata: "HCP_rawdata"
+  pitsdata: "HCP_sulcal_pits"
+
+sources:
+  native: "T1w/Native"
+  reg: "MNINonLinear/Native"
+  pits: "sulcal_pits_baseline"
+
+mesh_types:
+  pial: "pial.native"
+  white: "white.native"
+  sphere: "sphere.native"
+  sphere.reg: "sphere.MSMAll.native"
+  sphere.template: "sphere.32k_fs_LR"
+  aparc: "aparc.native.label"
+  curv: "curvature.native.shape"
+  basin: "white.basins"
+
+
+side: "L"
+
+
+# ------------------------------------------------------------------
+# Environments
+# ------------------------------------------------------------------
+environments:
+  slam: "../envs/env_slam.yml"
+
+
+# ------------------------------------------------------------------
+# Software
+# ------------------------------------------------------------------
+software:
+  able: "../software/ABLE"
+
+# ------------------------------------------------------------------
+# Containers
+# ------------------------------------------------------------------
+containers:
+  # mindboggle: "../images/mindboggle.sif"
+  # trace: "../images/trace.sif"
+  # able: "../images/able.sif"
+  # brainvisa: "/hpc/shared/apps/x86_64/softs/singularity_images/brainvisa-5.0.4.sif"
+  # matlab: ""
+  # singularity: ""
+
+  mindboggle: "docker://nipy/mindboggle"
+  trace: "docker://ilwoolyu/cmorph:1.7"
+  able: "docker://albertofpena/able:latest"
+  brainvisa: "https://brainvisa.info/download/brainvisa-5.0.4.sif"

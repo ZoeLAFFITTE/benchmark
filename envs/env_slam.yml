@@ -1,0 +1,12 @@
+name: env_slam
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - brain-slam==0.1.1
+      - gdist
+      - pandas

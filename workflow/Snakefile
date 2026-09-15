@@ -1,0 +1,370 @@
+#snakemake --cores 1 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work"
+#pkill -f snakemake
+
+configfile: "../config/config.yaml"
+
+ENVIRONMENTS = config["environments"]
+CONTAINERS = config["containers"]
+
+DATA = config["data_dir"]
+ATLAS = config["atlas_dir"]
+DIR = config["dir"]
+OUT = config["output_dir"]
+SOURCES = config["sources"]
+MESH = config["mesh_types"]
+SIDES = config["side"]
+
+RAW = DIR["rawdata"]
+UP = DIR["pitsdata"]
+
+NATIVE = SOURCES["native"]
+REG = SOURCES["reg"]
+PITS = SOURCES["pits"]
+
+WHITE = MESH["white"]
+PIAL = MESH["pial"]
+APARC = MESH["aparc"]
+CURV = MESH["curv"]
+BASIN = MESH["basin"]
+SPHEREREG = MESH["sphere.reg"]
+SPHERETEMP = MESH["sphere.template"]
+
+
+TESTS, SUBJECTS = glob_wildcards(f"{DATA}/{{test}}/{{sub}}/{NATIVE}")
+SUBJECTS = sorted(set(SUBJECTS))
+
+# Temporary restriction for development/testing.
+SUBJECTS = ["103818"]
+TESTS = ["HCP_test"]
+SIDE = "L"
+OUT = "results"
+
+
+# -----------------------------------------------------------------------------
+# Final targets
+# -----------------------------------------------------------------------------
+rule all:
+    input:
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.preproc.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.trace.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mindboggle.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        #expand(
+        #    f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.able.log",
+        #    test=TESTS,
+        #    sub=SUBJECTS,
+        #),
+        expand(
+            f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dices_tsv",
+            test=TESTS,
+            sub=SUBJECTS,
+        )
+
+
+# =============================================================================
+# PREPROCESSING
+# =============================================================================
+
+# 1. GIFTI -> VTK -------------------------------------------------------------
+rule convert_gii_vtk:
+    input:
+        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+        pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{PIAL}.surf.gii"
+
+    output:
+        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk",
+        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
+
+    log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log"
+
+    singularity: CONTAINERS["mindboggle"]
+
+    shell:
+        """
+        mris_convert {input.white_gii} {output.white_vtk}
+        mris_convert {input.pial_gii} {output.pial_vtk}
+        """
+
+
+# 2. GIFTI -> FreeSurfer texture ----------------------------------------------
+rule convert_gii_tk:
+    input:
+        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+        pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{PIAL}.surf.gii",
+        aparc_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{APARC}.gii",
+        curv_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{CURV}.gii"
+
+    output:
+        white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}",
+        pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}",
+        curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.curv",
+        curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.curv",
+        aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.aparc.annot",
+        aparc_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.aparc.annot"
+
+
+    log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.convert_gii_tk.log"
+
+    singularity: CONTAINERS["mindboggle"]
+
+    shell:
+        """
+        mris_convert {input.pial_gii} {output.pial_tk}
+        mris_convert {input.white_gii} {output.white_tk}
+        mris_convert -c {input.curv_gii} {input.pial_gii} {output.curv_pial_tk}
+        mris_convert -c {input.curv_gii} {input.white_gii} {output.curv_white_tk}
+        mris_convert --annot {input.aparc_gii} {input.white_gii} {output.aparc_white_tk}
+        mris_convert --annot {input.aparc_gii} {input.pial_gii} {output.aparc_pial_tk}
+
+        mv '$(dirname {output.curv_pial_tk})/unknown.$(basename {output.curv_pial_tk})' {output.curv_pial_tk}
+        mv '$(dirname {output.curv_white_tk})/unknown.$(basename {output.curv_white_tk})' {output.curv_white_tk}
+        """
+
+
+# 3. Compute textures ---------------------------------------------------------
+rule compute_textures:
+    input:
+        mesh=f"{DATA}/{RAW}{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
+
+    output:
+        dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii",
+        curv=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.mean_curv.gii"
+
+    conda: ENVIRONMENTS["slam"]
+
+    log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.texture.log"
+
+    script:"scripts/compute_textures.py"
+
+
+# 4. Aggregate preprocessing log ----------------------------------------------
+rule aggregate_preproc_log:
+    input:
+        gii_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log",
+        gii_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_tk.log",
+        texture=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.texture.log"
+
+    output:
+        log=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.preproc.log"
+
+    shell:
+        """
+        cat {input.gii_vtk} > {output.log}
+        cat {input.gii_tk} >> {output.log}
+        cat {input.texture} >> {output.log}
+
+        rm {input.gii_vtk} \
+           {input.gii_tk} \
+           {input.texture}
+        """
+
+
+# =============================================================================
+# ÉVALUATION DES BASINS D'INTÉRÉTS
+# =============================================================================
+rule interpole:
+    input:
+        basins_gii=f"{DATA}/{UP}/{{test}}/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
+        sphere_reg_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
+        sphere_template_gii=f"{ATLAS}.{SIDE}.{SPHERETEMP}.surf.gii"
+
+    output:
+        basins_resampled_gii=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
+
+    log:
+        f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.interpol.log"
+    
+    params:
+        prefix=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}",
+
+    shell:
+        """
+        module purge
+        module load all singularity FSL
+
+        msmresample {input.sphere_reg_gii} \
+            {params.prefix} \
+            -labels {input.basins_gii} \
+            -project {input.sphere_template_gii} \
+            -adap_bary
+
+        module purge
+        module load all singularity
+        """
+
+
+rule basins:
+    input:
+        basins_test_gii=f"{DATA}/{UP}/HCP_test/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
+        basins_retest_gii=f"{DATA}/{UP}/HCP_retest/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
+        basins_test_resampled_gii=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
+        basins_retest_resampled_gii=f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
+        sphere_reg_test_gii=f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
+        sphere_reg_retest_gii=f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
+        sphere_template_gii=f"{ATLAS}.{SIDE}.{SPHERETEMP}.surf.gii"
+
+    output:
+        dice_tsv=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dices_tsv"
+
+    conda: ENVIRONMENTS["slam"]
+
+    log: f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dice.log"
+
+    script: "scripts/compute_dices.py"
+
+
+# =============================================================================
+# FUNDI EXTRACTION
+# =============================================================================
+
+# 1. Trace --------------------------------------------------------------------
+rule trace:
+    input:
+        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk"
+
+    output:
+        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
+        sulci_cart=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.cart"
+
+    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.trace.log"
+
+    params:
+        output_prefix=(
+            lambda wc:
+            f"{OUT}/{wc.test}/{wc.sub}/trace/"
+            f"{wc.sub}.{SIDE}.{WHITE}"
+        )
+
+    singularity: CONTAINERS["trace"]
+
+    threads: 5
+
+    shell:
+        """
+        time CurveExtraction \
+            --inputSurface {input.white_vtk} \
+            --outputCurve {params.output_prefix} \
+            --nThreads {threads} \
+            --sulcus \
+            --cart \
+            --noVtk \
+            2>&1 | tee {log}
+        """
+
+
+# 2. Cachia -------------------------------------------------------------------
+rule cachia:
+    input:
+        mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+        dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
+
+    output:
+        sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
+
+    log: f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
+
+    singularity: CONTAINERS["brainvisa"]
+
+    shell:
+        """
+        /casa/install/bin/bv_env \
+            python -m brainvisa.axon.runprocess \
+            --enabledb \
+            surface_sulci_dpf \
+            {input.mesh} \
+            {input.dpf} \
+            {output.sulci} \
+            -0.005 10 10 \
+            2>&1 | tee {log}
+        """
+
+
+# 3. Mindboggle ---------------------------------------------------------------
+include: "rules/mindboggle.smk"
+
+
+# 4. ABLE ---------------------------------------------------------------------
+
+# ABLE requires BOTH hemispheres.
+#
+# The {side} wildcard is used only in convert_gii_tk.
+# Here we explicitly request L and R outputs.
+
+rule able:
+    input:
+        lh_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.{WHITE}",
+        lh_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.{PIAL}",
+        lh_curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.pial.curv",
+        lh_curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.white.curv",
+        lh_aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.pial.aparc.annot",
+
+        rh_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.{WHITE}",
+        rh_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.{PIAL}",
+        rh_curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.pial.curv",
+        rh_curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.white.curv",
+        rh_aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.pial.aparc.annot",
+
+    output:
+        mat=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.subj.mat"
+
+    singularity: CONTAINERS["able"]
+
+    log: f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.able.log"
+
+    shell:
+        """
+        export DISPLAY=
+
+        /usr/bin/ABLE_generic \
+            {input.lh_pial_tk} \
+            {input.lh_curv_pial_tk} \
+            {input.lh_white_tk} \
+            {input.lh_curv_white_tk} \
+            {input.lh_aparc_pial_tk} \
+            {input.rh_pial_tk} \
+            {input.rh_curv_pial_tk} \
+            {input.rh_white_tk} \
+            {input.rh_curv_white_tk} \
+            {input.rh_aparc_pial_tk} \
+            {output.mat} \
+            2>&1 | tee {log}
+        """
+
+# =============================================================================
+# POST PROC
+# =============================================================================
+
+rule inspect:
+    input:
+        mat=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.subj.mat",
+        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
+
+    output:
+        desc_txt=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.inspect.txt",
+        gyri_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.gyri.gii",
+        sulci_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.sulci.gii",
+        depth_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.depthmap.gii",
+        basins_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.sulcal_basins.gii",
+        endpoints_npy=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.endpoints.npy"
+
+    log: f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.inspect.log"
+
+    conda: ENVIRONMENTS["slam"]
+
+    script: "scripts/inspect_matlab.py"

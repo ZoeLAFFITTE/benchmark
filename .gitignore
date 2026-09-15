@@ -1,0 +1,42 @@
+# Local configuration
+#config/config.yaml
+
+images/
+
+envs/slam/
+
+workflow/results*/
+results*/
+data_test*/
+matlab*/
+software*/
+
+# Snakemake
+.snakemake*/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS / caches
+.DS_Store
+.cache*/
+.brainvisa*/
+.matlab*/
+.oracle_jre_usage*/
+
+# MATLAB Runtime
+.mcrCache*/
+
+# Snakemake
+.snakemake/
+
+# Build temporary directories
+build-temp-*/

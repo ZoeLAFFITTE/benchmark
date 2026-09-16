@@ -65,16 +65,26 @@ rule all:
         #     test=TESTS,
         #     sub=SUBJECTS,
         # ),
-        #expand(
-        #    f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.able.log",
-        #    test=TESTS,
-        #    sub=SUBJECTS,
-        #),
         expand(
-            f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dices_tsv",
-            test=TESTS,
-            sub=SUBJECTS,
-        )
+           f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.able.log",
+           test=TESTS,
+           sub=SUBJECTS,
+        ),
+        # expand(
+        #     f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.interpol_basins.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.convert_vtk_gii.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # ),
+        # expand(
+        #     f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.convert_scurve.log",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        # )
 
 
 # =============================================================================
@@ -118,6 +128,9 @@ rule convert_gii_tk:
         aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.aparc.annot",
         aparc_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.aparc.annot"
 
+    params:
+        prefix=f"{OUT}/{{test}}/{{sub}}/preproc/"
+
 
     log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.convert_gii_tk.log"
 
@@ -132,8 +145,8 @@ rule convert_gii_tk:
         mris_convert --annot {input.aparc_gii} {input.white_gii} {output.aparc_white_tk}
         mris_convert --annot {input.aparc_gii} {input.pial_gii} {output.aparc_pial_tk}
 
-        mv '$(dirname {output.curv_pial_tk})/unknown.$(basename {output.curv_pial_tk})' {output.curv_pial_tk}
-        mv '$(dirname {output.curv_white_tk})/unknown.$(basename {output.curv_white_tk})' {output.curv_white_tk}
+        mv "$(dirname {output.curv_pial_tk})/unknown.$(basename {output.curv_pial_tk})" {output.curv_pial_tk}
+        mv "$(dirname {output.curv_white_tk})/unknown.$(basename {output.curv_white_tk})" {output.curv_white_tk}
         """
 
 
@@ -178,55 +191,28 @@ rule aggregate_preproc_log:
 # =============================================================================
 # ÉVALUATION DES BASINS D'INTÉRÉTS
 # =============================================================================
-rule interpole:
-    input:
-        basins_gii=f"{DATA}/{UP}/{{test}}/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
-        sphere_reg_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
-        sphere_template_gii=f"{ATLAS}.{SIDE}.{SPHERETEMP}.surf.gii"
-
-    output:
-        basins_resampled_gii=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
-
-    log:
-        f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.interpol.log"
-    
-    params:
-        prefix=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}",
-
-    shell:
-        """
-        module purge
-        module load all singularity FSL
-
-        msmresample {input.sphere_reg_gii} \
-            {params.prefix} \
-            -labels {input.basins_gii} \
-            -project {input.sphere_template_gii} \
-            -adap_bary
-
-        module purge
-        module load all singularity
-        """
-
-
-rule basins:
+rule interpol_basins:
     input:
         basins_test_gii=f"{DATA}/{UP}/HCP_test/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
         basins_retest_gii=f"{DATA}/{UP}/HCP_retest/{{sub}}/{PITS}/{{sub}}.{SIDE}.{BASIN}.gii",
-        basins_test_resampled_gii=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
-        basins_retest_resampled_gii=f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.func.gii",
         sphere_reg_test_gii=f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
         sphere_reg_retest_gii=f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
         sphere_template_gii=f"{ATLAS}.{SIDE}.{SPHERETEMP}.surf.gii"
 
     output:
-        dice_tsv=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dices_tsv"
+        match_tsv=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.matching_tsv",
+        basins_test_reg_gii=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.gii",
+        basins_retest_reg_gii=f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.gii",
+        filtered_basins_test_npy=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.npy",
+        filtered_basins_retest_npy=f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.npy",
 
     conda: ENVIRONMENTS["slam"]
 
-    log: f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.dice.log"
+    log:
+        f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.interpol_basins.log"
 
-    script: "scripts/compute_dices.py"
+    script:
+        "scripts/compute_interpol.py"
 
 
 # =============================================================================
@@ -349,6 +335,55 @@ rule able:
 # =============================================================================
 # POST PROC
 # =============================================================================
+
+#1. VTIK -> GIFTII ------------------------------------------------------------
+rule convert_vtk_gii:
+    input:
+        curv_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk",
+        depth_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk",
+        depth_rescaled_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.vtk",
+        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.vtk",
+        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.vtk",
+        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk",
+
+    output:
+        curv_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.gii",
+        depth_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.gii",
+        depth_rescaled_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.gii",
+        folds_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.gii",
+        fundi_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.gii"
+
+    singularity:
+        CONTAINERS["mindboggle"]
+    
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.convert_vtk_gii.log"
+
+    shell:
+        """
+        mris_convert -c {input.curv_vtk} {input.white_vtk} {output.curv_gii}
+        mris_convert -c {input.depth_vtk} {input.white_vtk} {output.depth_gii}
+        mris_convert -c {input.depth_rescaled_vtk} {input.white_vtk} {output.depth_rescaled_gii}
+        mris_convert -c {input.folds_vtk} {input.white_vtk} {output.folds_gii}
+        mris_convert -c {input.fundi_vtk} {input.white_vtk} {output.fundi_gii}
+        """
+
+#2. Trace -> GIFTII ------------------------------------------------------------
+rule convert_scurve_GII:
+    input:
+        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
+        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
+
+    output:
+        sulci_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.gii",
+        sulci_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_c.gii",
+    
+    conda: ENVIRONMENTS["slam"]
+
+    log:
+        f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.convert_scurve.log"
+
+    script:
+        "scripts/convert_scurve_gii.py"
 
 rule inspect:
     input:

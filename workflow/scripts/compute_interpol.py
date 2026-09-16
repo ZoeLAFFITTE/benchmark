@@ -1,7 +1,9 @@
+import os
 import numpy as np
 import pandas as pd
 import slam.io as sio
 import slam.texture as stex
+import slam.remeshing as srem
 
 def match_basins(test_basins, retest_basins):
     """
@@ -36,15 +38,13 @@ def match_basins(test_basins, retest_basins):
 
     return correspondence
 
+
 # ------------------------------------------------------------------
 # Inputs / outputs
 # ------------------------------------------------------------------
+
 basins_test_path=snakemake.input.basins_test_gii
 basins_retest_path=snakemake.input.basins_retest_gii
-
-basins_test_resampled_path=snakemake.input.basins_test_resampled_gii
-basins_retest_resampled_path=snakemake.input.basins_retest_resampled_gii
-
 
 sphere_reg_test_path=snakemake.input.sphere_reg_test_gii
 sphere_reg_retest_path=snakemake.input.sphere_reg_retest_gii
@@ -59,31 +59,44 @@ sphere_template = sio.load_mesh(sphere_template_path)
 basins_test = sio.load_texture(basins_test_path).darray[0]
 basins_retest = sio.load_texture(basins_retest_path).darray[0]
 
-basins_test_resampled = sio.load_texture(basins_test_resampled_path).darray[0]
-basins_retest_resampled = sio.load_texture(basins_retest_resampled_path).darray[0]
 
 print(len(basins_test))
 print(len(basins_retest))
-
-print(len(basins_test_resampled))
-print(len(basins_retest_resampled))
 
 print(len(sphere_reg_test.vertices))
 print(len(sphere_reg_retest.vertices))
 print(len(sphere_template.vertices))
 
-# 120809
-# 120594
-# 120809
-# 120594
-# 32492
+# NN interpolation of basins to the template
+basins_test_reg = srem.texture_spherical_interpolation_nearest_neighbor(
+    sphere_reg_test,
+    sphere_template,
+    basins_test,
+)
 
-print(np.array_equal(basins_test_resampled, basins_retest_resampled))
-print(np.sum(basins_test_resampled != basins_retest_resampled))
-print(np.unique(basins_test))
-print(np.unique(basins_retest))
+basins_retest_reg = srem.texture_spherical_interpolation_nearest_neighbor(
+    sphere_reg_retest,
+    sphere_template,
+    basins_retest,
+)
 
-matches = match_basins(basins_test_resampled, basins_retest_resampled)
+matches = match_basins(
+    basins_test_reg,
+    basins_retest_reg,
+)
+
+print(np.unique(basins_test_reg))
+print(np.unique(basins_retest_reg))
+
+print(len(np.unique(basins_test_reg)))
+print(len(np.unique(basins_retest_reg)))
+
+basins_test_reg_tex = stex.TextureND(darray=basins_test_reg)
+sio.write_texture(basins_test_reg_tex, snakemake.output.basins_test_reg_gii)
+
+basins_retest_reg_tex = stex.TextureND(darray=basins_retest_reg)
+sio.write_texture(basins_retest_reg_tex, snakemake.output.basins_retest_reg_gii)
+
 print(matches)
 
 df_matches = pd.DataFrame.from_dict(
@@ -95,7 +108,27 @@ df_matches = pd.DataFrame.from_dict(
 df_matches.index.name = "test_basin"
 
 df_matches.to_csv(
-    snakemake.output.dice_tsv,
+    snakemake.output.match_tsv,
     sep="\t",
     index=True,
 )
+
+print(df_matches)
+
+df_matches["overlap"] = df_matches["overlap"].astype(float)
+
+df_reproducible = df_matches[
+    df_matches["overlap"] >= 0.9
+]
+
+filtered_test_basins = df_reproducible.index.to_numpy(dtype=int)
+filtered_retest_basins = df_reproducible["retest_basin"].to_numpy(dtype=int)
+
+print("Test basins:", filtered_test_basins)
+print("Retest basins:", filtered_retest_basins)
+
+print("Test basins:", len(filtered_test_basins))
+print("Retest basins:", len(filtered_retest_basins))
+
+np.save(snakemake.output.filtered_basins_test_npy, filtered_test_basins)
+np.save(snakemake.output.filtered_basins_retest_npy, filtered_retest_basins)

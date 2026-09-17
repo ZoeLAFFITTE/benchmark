@@ -1,8 +1,12 @@
+import numpy as np
 import slam.io as sio
+import nibabel as nib
+import pyvista as pv
+from nibabel.gifti import GiftiImage, GiftiDataArray
 
 def write_vtk_fs_ascii(filename, coords, faces):
     """
-    Écrit un fichier VTK 1.0 ASCII compatible FreeSurfer.
+    Écrit un fichier mesh VTK 1.0 ASCII compatible FreeSurfer.
     coords : (N,3) numpy array
     faces  : (M,3) numpy array
     """
@@ -29,10 +33,25 @@ def write_vtk_fs_ascii(filename, coords, faces):
 
     print(f"VTK FreeSurfer ASCII écrit : {filename}")
 
-white_mesh = sio.load_mesh(snakemake.input.mesh)
+def vtk_scalar_to_gifti(vtk_file, gii_file, dtype):
 
-write_vtk_fs_ascii(
-    snakemake.output.vtk,
-    white_mesh.vertices,
-    white_mesh.faces,
-)
+    # Read scalar from VTK
+    mesh = pv.read(vtk_file)
+    texture = np.asarray(mesh[mesh.array_names[0]], dtype=dtype)
+
+    data_array = nib.gifti.GiftiDataArray(
+        data=texture, intent="NIFTI_INTENT_SHAPE", datatype="NIFTI_TYPE_FLOAT32"
+    )
+
+    gifti_image = nib.gifti.GiftiImage(darrays=[data_array])
+
+    nib.save(gifti_image, gii_file)
+
+
+input_files = [
+    path for path in snakemake.input
+    if path != snakemake.input.mesh
+]
+
+for input_file, output_file in zip(input_files, snakemake.output):
+    vtk_scalar_to_gifti(input_file, output_file, dtype= np.float32)

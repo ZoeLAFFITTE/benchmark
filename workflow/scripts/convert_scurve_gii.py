@@ -2,32 +2,85 @@ import numpy as np
 import slam.io as sio
 import slam.texture as stex
 
-all_indices = []
+
+# ---------------------------------------------------------------------------
+# Inputs
+# ---------------------------------------------------------------------------
 
 scurve_file_path = snakemake.input.sulci_curv
-white_mesh_path = snakemake.input.white_gii
+scurve_bary_file_path = snakemake.input.sulci_curv_bary
+white_mesh = sio.load_mesh(snakemake.input.white_gii)
 
-white_mesh = sio.load_mesh(white_mesh_path)
-
-texture_c = np.zeros(len(white_mesh.vertices), dtype=int)
-
-with open(scurve_file_path, "r") as f:
-    for color, line in enumerate(f):
-        line = np.fromstring(line, dtype=int, sep=" ")
-        all_indices.extend(line)
-        texture_c[line] = int(color)
+n_vertices = len(white_mesh.vertices)
 
 
-all_indices = np.unique(all_indices)
+# ---------------------------------------------------------------------------
+# Sulcal curves
+# ---------------------------------------------------------------------------
+
+sulci_texture = np.zeros(n_vertices, dtype=np.int8)
+sulci_label_texture = np.zeros(n_vertices, dtype=np.int32)
+
+with open(scurve_file_path, "r") as file:
+    for sulcus_id, line in enumerate(file, start=1):
+        indices = np.fromstring(line, dtype=int, sep=" ")
+
+        sulci_texture[indices] = 1
+        sulci_label_texture[indices] = sulcus_id
 
 
-# --- Créer une "texture" binaire : 1 si point appartient à une courbe sulcale, 0 sinon ---
-texture = np.zeros(len(white_mesh.vertices), dtype=int)
-texture[all_indices] = 1
+# Write binary sulci texture
+sio.write_texture(
+    stex.TextureND(darray=sulci_texture),
+    snakemake.output.sulci_gii,
+)
 
-tex = stex.TextureND(darray=texture)
-sio.write_texture(tex, snakemake.output.sulci_gii)
+# Write sulci label texture
+sio.write_texture(
+    stex.TextureND(darray=sulci_label_texture),
+    snakemake.output.sulci_c_gii,
+)
 
-# --- Créer une "texture" continue : 1 couleur par segment ---
-tex_c = stex.TextureND(darray=texture_c)
-sio.write_texture(tex_c, snakemake.output.sulci_c_gii)
+
+# ---------------------------------------------------------------------------
+# Geodesic barycentric sulcal curves
+# ---------------------------------------------------------------------------
+
+geodesic_bary_texture = np.zeros(n_vertices, dtype=np.int8)
+geodesic_bary_label_texture = np.zeros(n_vertices, dtype=np.int32)
+
+sulcus_id = 1
+
+with open(scurve_bary_file_path, "r") as file:
+    next(file)  # Skip header
+
+    for line in file:
+        values = line.split()
+
+        # A single value indicates the beginning of a new sulcus
+        if len(values) == 1:
+            sulcus_id += 1
+            continue
+
+        v1, v2 = map(int, values[:2])
+
+        # Binary texture
+        geodesic_bary_texture[v1] = 1
+        geodesic_bary_texture[v2] = 1
+
+        # Sulcus label texture
+        geodesic_bary_label_texture[v1] = sulcus_id
+        geodesic_bary_label_texture[v2] = sulcus_id
+
+
+# Write binary barycentric sulci texture
+sio.write_texture(
+    stex.TextureND(darray=geodesic_bary_texture),
+    snakemake.output.sulci_bary_gii,
+)
+
+# Write barycentric sulci label texture
+sio.write_texture(
+    stex.TextureND(darray=geodesic_bary_label_texture),
+    snakemake.output.sulci_bary_c_gii,
+)

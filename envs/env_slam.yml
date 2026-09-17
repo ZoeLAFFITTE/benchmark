@@ -10,3 +10,4 @@ dependencies:
       - brain-slam==0.1.1
       - gdist
       - pandas
+      - pyvista

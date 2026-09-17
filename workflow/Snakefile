@@ -45,18 +45,9 @@ OUT = "results"
 # -----------------------------------------------------------------------------
 rule all:
     input:
-        f"{OUT}/aggregated/cachia_hausdorff.tsv",
-        f"{OUT}/aggregated/cachia_mean.tsv",
-        f"{OUT}/aggregated/cachia_p95.tsv",
-
-        f"{OUT}/aggregated/trace_hausdorff.tsv",
-        f"{OUT}/aggregated/trace_mean.tsv",
-        f"{OUT}/aggregated/trace_p95.tsv",
-
-        f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
-        f"{OUT}/aggregated/mindboggle_mean.tsv",
-        f"{OUT}/aggregated/mindboggle_p95.tsv",
-
+        f"{OUT}/plots/hausdorff.svg",
+        f"{OUT}/plots/mean.svg",
+        f"{OUT}/plots/p95.svg",
 
 # =============================================================================
 # PREPROCESSING
@@ -493,3 +484,27 @@ rule aggregate_results:
 
     script:
         "scripts/aggregate_results.py"
+
+#5. plots finaux ---------------------------------------------------------------
+rule plots:
+    input:
+        cachia_hausdorff_tsv=f"{OUT}/aggregated/cachia_hausdorff.tsv",
+        cachia_mean_tsv=f"{OUT}/aggregated/cachia_mean.tsv",
+        cachia_p95_tsv=f"{OUT}/aggregated/cachia_p95.tsv",
+        trace_hausdorff_tsv=f"{OUT}/aggregated/trace_hausdorff.tsv",
+        trace_mean_tsv=f"{OUT}/aggregated/trace_mean.tsv",
+        trace_p95_tsv=f"{OUT}/aggregated/trace_p95.tsv",
+        mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
+        mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
+        mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv",
+    output:
+        hausdorff_plot=f"{OUT}/plots/hausdorff.svg",
+        mean_plot=f"{OUT}/plots/mean.svg",
+        p95_plot=f"{OUT}/plots/p95.svg",
+    
+    conda: ENVIRONMENTS["slam"]
+
+    log:
+        f"{OUT}/aggregated/plot.log"
+    script:
+        "scripts/plot_results.py"

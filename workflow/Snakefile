@@ -28,13 +28,14 @@ CURV = MESH["curv"]
 BASIN = MESH["basin"]
 SPHEREREG = MESH["sphere.reg"]
 SPHERETEMP = MESH["sphere.template"]
+WHITETEMP = MESH["white.template"]
 
 
 TESTS, SUBJECTS = glob_wildcards(f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}")
 SUBJECTS = sorted(set(SUBJECTS))
 
 # Temporary restriction for development/testing.
-SUBJECTS = ["103818"]
+# SUBJECTS = ["103818"]
 #TESTS = ["HCP_test"]
 SIDE = "L"
 OUT = "results"
@@ -45,9 +46,21 @@ OUT = "results"
 # -----------------------------------------------------------------------------
 rule all:
     input:
-        f"{OUT}/plots/hausdorff.svg",
-        f"{OUT}/plots/mean.svg",
-        f"{OUT}/plots/p95.svg",
+        f"{OUT}/plots/hausdorff.html",
+        f"{OUT}/plots/mean.html",
+        f"{OUT}/plots/p95.html",
+
+        f"{OUT}/plots/cachia_hausdorff_proj.html",
+        f"{OUT}/plots/cachia_mean.html_proj",
+        f"{OUT}/plots/cachia_p95_proj.html",
+
+        f"{OUT}/plots/trace_hausdorff_proj.html",
+        f"{OUT}/plots/trace_mean_proj.html",
+        f"{OUT}/plots/trace_p95_proj.html",
+
+        f"{OUT}/plots/mindboggle_hausdorff_proj.html",
+        f"{OUT}/plots/mindboggle_mean_proj.html",
+        f"{OUT}/plots/mindboggle_p95_proj.html",
 
 # =============================================================================
 # PREPROCESSING
@@ -497,10 +510,17 @@ rule plots:
         mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
         mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
         mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv",
+        # white_template_gii=f"{ATLAS}.{SIDE}.{WHITETEMP}.surf.gii",
+        # basins_test_reg_gii=f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.gii",
     output:
-        hausdorff_plot=f"{OUT}/plots/hausdorff.svg",
-        mean_plot=f"{OUT}/plots/mean.svg",
-        p95_plot=f"{OUT}/plots/p95.svg",
+        hausdorff_plot=f"{OUT}/plots/hausdorff.html",
+        mean_plot=f"{OUT}/plots/mean.html",
+        p95_plot=f"{OUT}/plots/p95.html",
+
+        # hausdorff_proj=f"{OUT}/plots/hausdorff.html",
+        # mean_ploj=f"{OUT}/plots/mean.html",
+        # p95_ploj=f"{OUT}/plots/p95.html",
+
     
     conda: ENVIRONMENTS["slam"]
 
@@ -508,3 +528,48 @@ rule plots:
         f"{OUT}/aggregated/plot.log"
     script:
         "scripts/plot_results.py"
+
+
+rule proj:
+    input:
+        cachia_hausdorff_tsv=f"{OUT}/aggregated/cachia_hausdorff.tsv",
+        cachia_mean_tsv=f"{OUT}/aggregated/cachia_mean.tsv",
+        cachia_p95_tsv=f"{OUT}/aggregated/cachia_p95.tsv",
+
+        trace_hausdorff_tsv=f"{OUT}/aggregated/trace_hausdorff.tsv",
+        trace_mean_tsv=f"{OUT}/aggregated/trace_mean.tsv",
+        trace_p95_tsv=f"{OUT}/aggregated/trace_p95.tsv",
+
+        mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
+        mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
+        mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv",
+
+        white_template_gii=f"{ATLAS}.{SIDE}.{WHITETEMP}.surf.gii",
+
+        basins_test_reg_gii=expand(
+            f"{OUT}/HCP_test/{{sub}}/postproc/"
+            f"{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.gii",
+            sub=SUBJECTS,
+        ),
+
+    output:
+        cachia_hausdorff=f"{OUT}/plots/cachia_hausdorff_proj.html",
+        cachia_mean=f"{OUT}/plots/cachia_mean.html_proj",
+        cachia_p95=f"{OUT}/plots/cachia_p95_proj.html",
+
+        trace_hausdorff=f"{OUT}/plots/trace_hausdorff_proj.html",
+        trace_mean=f"{OUT}/plots/trace_mean_proj.html",
+        trace_p95=f"{OUT}/plots/trace_p95_proj.html",
+
+        mindboggle_hausdorff=f"{OUT}/plots/mindboggle_hausdorff_proj.html",
+        mindboggle_mean=f"{OUT}/plots/mindboggle_mean_proj.html",
+        mindboggle_p95=f"{OUT}/plots/mindboggle_p95_proj.html",
+
+    conda:
+        ENVIRONMENTS["slam"]
+
+    log:
+        f"{OUT}/aggregated/proj.log"
+
+    script:
+        "scripts/proj.py"

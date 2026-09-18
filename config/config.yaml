@@ -23,6 +23,7 @@ sources:
 mesh_types:
   pial: "pial.native"
   white: "white.native"
+  white.template: "white_MSMAll_2_d41_WRN_DeDrift.32k_fs_LR"
   sphere: "sphere.native"
   sphere.reg: "sphere.MSMAll.native"
   sphere.template: "sphere.32k_fs_LR"

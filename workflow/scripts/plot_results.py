@@ -1,16 +1,21 @@
 """
-Génère un plot final par métrique (Hausdorff, Mean, P95).
+Génère un plot interactif Plotly par métrique (Hausdorff, Mean, P95).
 
-Pour chaque métrique : un point par sujet, une couleur par méthode
-(Cachia / Trace / Mindboggle), sur l'ensemble des bassins communs
-à tous les sujets.
+Pour chaque métrique :
+    x = sujet
+    y = distance
+    1 point = 1 bassin pour 1 sujet
+    couleur = méthode (Cachia / Trace / Mindboggle)
+
+Tous les bassins présents dans les données sont affichés.
 """
 
-import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
+import plotly.graph_objects as go
+
 
 METHODS = ["cachia", "trace", "mindboggle"]
+
 METRICS = {
     "hausdorff": "Hausdorff",
     "mean": "Mean nearest-neighbor",
@@ -18,69 +23,108 @@ METRICS = {
 }
 
 
-def load_all_data(inputs) -> pd.DataFrame:
-    """Empile les 9 TSV (3 méthodes x 3 métriques) dans un seul dataframe long.
+def load_all_data(inputs):
+    """Load and concatenate the 9 TSV files in long format."""
 
-    Chaque TSV source est au format large : une ligne par sujet, une colonne
-    par bassin (label). On le passe au format long (subject, label, distance)
-    avant de l'empiler avec les autres.
-    """
     frames = []
+
     for method in METHODS:
         for metric in METRICS:
             path = getattr(inputs, f"{method}_{metric}_tsv")
             wide = pd.read_csv(path, sep="\t")
-            long = wide.melt(id_vars="subject", var_name="label", value_name="distance")
+            long = wide.melt(
+                id_vars="subject",
+                var_name="label",
+                value_name="distance",
+            )
             long["method"] = method.capitalize()
             long["metric"] = metric
             frames.append(long)
+
     return pd.concat(frames, ignore_index=True)
 
 
-def get_common_labels(data: pd.DataFrame) -> set:
-    """Bassins présents chez tous les sujets, toutes méthodes/métriques confondues."""
-    labels_by_subject = data.groupby("subject")["label"].apply(set)
-    return set.intersection(*labels_by_subject)
+def plot_metric(data, metric, title, output_file):
+    """Generate an interactive Plotly plot for one metric."""
 
-
-def plot_metric(data: pd.DataFrame, metric: str, title: str, output_file: str) -> None:
-    """Un plot : x = bassin, y = distance, un point par sujet, couleur par méthode."""
     subset = data.loc[data["metric"] == metric].copy()
+
+    # Make sure identifiers are strings
+    subset["subject"] = subset["subject"].astype(str)
     subset["label"] = subset["label"].astype(str)
 
-    n_labels = subset["label"].nunique()
-    n_subjects = subset["subject"].nunique()
-    fig, ax = plt.subplots(figsize=(max(14, n_labels * 1.3), 7))
+    fig = go.Figure()
 
-    sns.stripplot(
-        data=subset,
-        x="label",
-        y="distance",
-        hue="method",
-        hue_order=[m.capitalize() for m in METHODS],
-        dodge=True,
-        jitter=0.25,
-        size=3,
-        alpha=0.6,
-        ax=ax,
+    for method in [m.capitalize() for m in METHODS]:
+
+        method_data = subset.loc[
+            subset["method"] == method
+        ]
+
+        fig.add_trace(
+            go.Scatter(
+                x=method_data["subject"],
+                y=method_data["distance"],
+                mode="markers",
+                name=method,
+                customdata=method_data[
+                    ["subject", "label", "distance"]
+                ],
+                hovertemplate=(
+                    "<b>Subject:</b> %{customdata[0]}<br>"
+                    "<b>Basin:</b> %{customdata[1]}<br>"
+                    "<b>Distance:</b> %{customdata[2]:.3f}"
+                    "<extra>%{fullData.name}</extra>"
+                ),
+                marker=dict(
+                    size=6,
+                    opacity=0.7,
+                ),
+            )
+        )
+
+    n_subjects = subset["subject"].nunique()
+    n_basins = subset["label"].nunique()
+
+    fig.update_layout(
+        title=(
+            f"{title} distance "
+            f"(n = {n_subjects} subjects, {n_basins} basins)"
+        ),
+        xaxis=dict(
+            title="Subject",
+            type="category",
+            categoryorder="category ascending",
+        ),
+        yaxis=dict(
+            title="Distance",
+        ),
+        legend=dict(
+            title="Method",
+        ),
+        hovermode="closest",
+        template="plotly_white",
     )
 
-    ax.set_xlabel("Basin label")
-    ax.set_ylabel("Distance")
-    ax.set_title(f"{title} distance per basin (n = {n_subjects} subjects)")
-    ax.legend(title="Method")
-    ax.tick_params(axis="x", rotation=90)
-
-    fig.tight_layout()
-    fig.savefig(output_file, format="svg")
-    plt.close(fig)
-
+    fig.write_html(
+        output_file,
+        include_plotlyjs="cdn",
+    )
 
 data = load_all_data(snakemake.input)
-data = data[data["label"].isin(get_common_labels(data))]
 
 for metric, title in METRICS.items():
-    plot_metric(data, metric, title, getattr(snakemake.output, f"{metric}_plot"))
 
+    output_file = getattr(
+        snakemake.output,
+        f"{metric}_plot",
+    )
+
+    plot_metric(
+        data=data,
+        metric=metric,
+        title=title,
+        output_file=output_file,
+    )
 
 

@@ -4,6 +4,8 @@ import pandas as pd
 import slam.io as sio
 import slam.texture as stex
 import slam.remeshing as srem
+import slam.plot as splt
+import plotly.express as px
 
 def match_basins(test_basins, retest_basins):
     """
@@ -38,6 +40,86 @@ def match_basins(test_basins, retest_basins):
 
     return correspondence
 
+def compute_feature(matches, basins_test, basins_retest, threshold, path):
+
+    # Filtrer les matches selon le seuil d'overlap
+    filtered_matches = matches[
+        matches["overlap"].astype(float) >= 0
+    ]
+
+    fig = px.histogram(
+        filtered_matches,
+        x="overlap"
+    )
+
+    fig.update_xaxes(
+        range=[0, 1],
+        tick0=0,
+        dtick=0.1,
+    )
+
+    fig.write_html(
+        path,
+        include_plotlyjs="cdn",
+    )
+
+    print(len(np.unique(basins_test)))
+    print(len(np.unique(basins_retest)))
+
+    # Textures de sortie
+    basins_test_overlap = np.zeros(
+        len(basins_test),
+        dtype=float,
+    )
+
+    basins_retest_overlap = np.zeros(
+        len(basins_retest),
+        dtype=float,
+    )
+
+    # Parcourir les matches conservés
+    for label_test, row in filtered_matches.iterrows():
+
+        label_test = int(label_test)
+        label_retest = int(row["retest_basin"])
+        overlap = float(row["overlap"])
+
+        # Attribuer l'overlap à tous les sommets du bassin correspondant
+        basins_test_overlap[basins_test == label_test] = overlap
+        basins_retest_overlap[basins_retest == label_retest] = overlap
+
+    return basins_test_overlap, basins_retest_overlap
+
+
+def compute_proj(basins_overlap, white_mesh, path):
+    mesh_data = {
+        "vertices": white_mesh.vertices,
+        "faces": white_mesh.faces,
+        "title": f"Overlap"
+    }
+
+    intensity_data = {
+        "values": basins_overlap,
+        "mode": "vertex",
+    }
+
+    display_settings = {
+        "template": "plotly_white",
+        "colorscale": "Turbo"
+    }
+
+    fig = splt.plot_mesh(
+        mesh_data,
+        intensity_data,
+        display_settings,
+        caption=False,
+    )
+
+    fig.write_html(
+        path,
+        include_plotlyjs="cdn",
+    )
+
 
 # ------------------------------------------------------------------
 # Inputs / outputs
@@ -50,10 +132,16 @@ sphere_reg_test_path=snakemake.input.sphere_reg_test_gii
 sphere_reg_retest_path=snakemake.input.sphere_reg_retest_gii
 sphere_template_path=snakemake.input.sphere_template_gii
 
+white_test_path = snakemake.input.white_test_gii
+white_retest_path = snakemake.input.white_retest_gii
+
 # Load meshes
 sphere_reg_test = sio.load_mesh(sphere_reg_test_path)
 sphere_reg_retest = sio.load_mesh(sphere_reg_retest_path)
 sphere_template = sio.load_mesh(sphere_template_path)
+
+white_test = sio.load_mesh(white_test_path)
+white_retest = sio.load_mesh(white_retest_path)
 
 # Load texture
 basins_test = sio.load_texture(basins_test_path).darray[0]
@@ -113,6 +201,8 @@ df_matches.to_csv(
     index=True,
 )
 
+basins_test_overlap, basins_retest_overlap = compute_feature(df_matches, basins_test, basins_retest, 0.8, snakemake.output.hist)
+
 print(df_matches)
 
 df_matches["overlap"] = df_matches["overlap"].astype(float)
@@ -132,3 +222,13 @@ print("Retest basins:", len(filtered_retest_basins))
 
 np.save(snakemake.output.filtered_basins_test_npy, filtered_test_basins)
 np.save(snakemake.output.filtered_basins_retest_npy, filtered_retest_basins)
+
+
+basins_test_overlap_tex = stex.TextureND(darray=basins_test_overlap)
+sio.write_texture(basins_test_overlap_tex, snakemake.output.basins_test_overlap_gii)
+
+basins_retest_overlap_tex = stex.TextureND(darray=basins_retest_overlap)
+sio.write_texture(basins_retest_overlap_tex, snakemake.output.basins_retest_overlap_gii)
+
+compute_proj(basins_test_overlap, white_test, snakemake.output.proj_overlap_test)
+compute_proj(basins_retest_overlap, white_retest, snakemake.output.proj_overlap_retest)

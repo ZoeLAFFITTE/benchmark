@@ -5,7 +5,6 @@ import slam.plot as splt
 
 
 METHODS = ["cachia", "trace", "mindboggle"]
-
 METRICS = ["hausdorff", "mean", "p95"]
 
 

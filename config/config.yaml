@@ -5,11 +5,12 @@
 output_dir: "/home/INT/laffitte.z/code/these/data/compar"
 
 # ------------------------------------------------------------------
-# Input data: HCP SPECIFIC FILES ORGANIZATION
+# Input data
 # ------------------------------------------------------------------
 
 data_dir: "/envau/work/meca/data/test_retest_datatbase/HCP_test_retest"
 atlas_dir: "/envau/work/meca/data/atlas_glasser2016/Glasser_et_al_2016_HCP_MMP1.0_kN_RVVG/Q1-Q6_RelatedValidation210/MNINonLinear/fsaverage_LR32k/Q1-Q6_RelatedValidation210"
+data_test: "/envau/work/meca/users/2025_laffite.z/code/these/benchmark/data_test"
 
 dir:
   rawdata: "HCP_rawdata"

@@ -10,7 +10,7 @@ output_dir: "/home/INT/laffitte.z/code/these/data/compar"
 
 data_dir: "/envau/work/meca/data/test_retest_datatbase/HCP_test_retest"
 atlas_dir: "/envau/work/meca/data/atlas_glasser2016/Glasser_et_al_2016_HCP_MMP1.0_kN_RVVG/Q1-Q6_RelatedValidation210/MNINonLinear/fsaverage_LR32k/Q1-Q6_RelatedValidation210"
-data_test: "/envau/work/meca/users/2025_laffite.z/code/these/benchmark/data_test"
+data_test: "/envau/work/meca/users/2025_laffite.z/data/textures_for_zoe"
 
 dir:
   rawdata: "HCP_rawdata"
@@ -30,10 +30,11 @@ mesh_types:
   sphere.template: "sphere.32k_fs_LR"
   aparc: "aparc.native.label"
   curv: "curvature.native.shape"
-  basin: "white.basins"
+  basin: "basins_100.0_0.005_0.0"
 
 
 side: "L"
+thr_basins: 0.8
 
 
 # ------------------------------------------------------------------

@@ -1,5 +1,5 @@
 ## 1. Mean curvature ----------------------------------------------------------
-rule compute_mean_curvature:
+rule mindboggle_compute_mean_curvature:
     input:
         pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
     output:
@@ -21,7 +21,7 @@ rule compute_mean_curvature:
 
 
 ## 2. Travel depth ------------------------------------------------------------
-rule compute_travel_depth:
+rule mindboggle_compute_travel_depth:
     input:
         pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
 
@@ -42,7 +42,7 @@ rule compute_travel_depth:
         """
 
 ## 3. Rescal depth ------------------------------------------------------------
-rule compute_rescale_depth:
+rule mindboggle_compute_rescale_depth:
     input:
         depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk"
 
@@ -61,14 +61,14 @@ rule compute_rescale_depth:
     shell:
         """
         /opt/miniconda-latest/envs/mb/bin/python -u \
-            ./scripts/compute_rescale_depth.py \
+            ./scripts/mindboggle_compute_rescale_depth.py \
             {input.depth} \
             {params.output_prefix} \
             2>&1 | tee {log}
         """
 
 ## 4. Depth depth threshold ---------------------------------------------------
-rule compute_depth_threshold:
+rule mindboggle_compute_depth_threshold:
     input:
         depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk"
     
@@ -84,7 +84,7 @@ rule compute_depth_threshold:
     shell:
         """
         /opt/miniconda-latest/envs/mb/bin/python -u \
-            ./scripts/compute_folds.py \
+            ./scripts/mindboggle_compute_folds.py \
             {input.depth} \
             {output.folds_vtk} \
             {output.folds_npy} \
@@ -92,7 +92,7 @@ rule compute_depth_threshold:
         """
 
 ## 5. Extract fundus ----------------------------------------------------------
-rule compute_fundi:
+rule mindboggle_compute_fundi:
     input:
         folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.npy",
         curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk",
@@ -109,7 +109,7 @@ rule compute_fundi:
     shell:
         """
         /opt/miniconda-latest/envs/mb/bin/python -u \
-            ./scripts/compute_fundi.py \
+            ./scripts/mindboggle_compute_fundi.py \
             {input.folds_npy} \
             {input.curv} \
             {input.depth_rescaled} \
@@ -118,7 +118,7 @@ rule compute_fundi:
         """
 
 
-rule aggregate_mindboggle_log:
+rule mindboggle_aggregate_log:
     input:
         curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.log",
         depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.log",
@@ -141,5 +141,6 @@ rule aggregate_mindboggle_log:
            {input.depth} \
            {input.depth_rescaled} \
            {input.folds} \
-           {input.fundi}
+           {input.fundi} \
+           2>&1 | tee {log}
         """

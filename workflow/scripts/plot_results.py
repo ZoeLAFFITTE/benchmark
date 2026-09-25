@@ -1,146 +1,86 @@
 #!/usr/bin/env python
+
 """
 Generate interactive Plotly figures for overlap and distance metrics.
 
 For each distance metric:
     x = subject
     y = distance
-    one point = one basin for one subject
+    one point = one label for one subject
     color = method (Cachia / Trace / Mindboggle)
 
 For the overlap plot:
     x = subject
     y = overlap
-    one point = one reproducible basin for one subject
-    color = method
+    one point = one basin for one subject
 """
 
 from pathlib import Path
-
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
 
-METHODS = {
-    "cachia": "Cachia",
-    "trace": "Trace",
-    "mindboggle": "Mindboggle",
-}
-
 METRICS = {
+    "log(hausdorff)": "Hausdorff",
     "hausdorff": "Hausdorff",
-    "mean": "Mean nearest-neighbor",
-    "p95": "P95 nearest-neighbor",
+    "mean_nn": "Mean nearest-neighbor",
+    "p95_nn": "P95 nearest-neighbor",
 }
 
 
 def load_overlaps(match_paths):
-    """
-    Load and filter basin overlap results for all subjects and methods.
+    """Load overlap results for all subjects."""
 
-    Parameters
-    ----------
-    match_paths : list of str
-        Paths to the matching TSV files.
-    threshold : float
-        Minimum overlap required for a basin to be considered reproducible.
-
-    Returns
-    -------
-    pandas.DataFrame
-        DataFrame containing the reproducible basin matches for all subjects
-        and methods.
-    """
     all_matches = []
 
     for match_path in match_paths:
-        match = pd.read_csv(
-            match_path,
-            sep="\t",
-        )
-
+        match = pd.read_csv(match_path, sep="\t")
         match["overlap"] = match["overlap"].astype(float)
 
         subject = Path(match_path).parent.name
-
         match["subject"] = subject
 
         all_matches.append(match)
 
-    return pd.concat(
-        all_matches,
-        ignore_index=True,
-    )
+    return pd.concat(all_matches, ignore_index=True)
 
 
-def load_distances(snakemake):
-    """
-    Load and combine distance results for all methods and metrics.
-
-    Parameters
-    ----------
-    snakemake : snakemake object
-        Snakemake object containing the input TSV files.
-
+def load_distances(path): 
+    """ 
+    Load aggregated test-retest distance results. Expected columns:
+        subject
+        side
+        label_test
+        label_retest
+        method
+        hausdorff
+        mean_nn
+        p95_nn
+    
     Returns
     -------
     pandas.DataFrame
-        Long-format DataFrame containing subject, basin, method, metric,
-        and distance columns.
+        Long-format DataFrame.
     """
-    all_distances = []
 
-    for method, method_name in METHODS.items():
-        for metric in METRICS:
-            path = getattr(
-                snakemake.input,
-                f"{method}_{metric}_tsv",
-            )
-
-            wide = pd.read_csv(
-                path,
-                sep="\t",
-            )
-
-            long = wide.melt(
-                id_vars="subject",
-                var_name="label",
-                value_name="distance",
-            )
-
-            long["method"] = method_name
-            long["metric"] = metric
-
-            all_distances.append(long)
-
-    return pd.concat(
-        all_distances,
-        ignore_index=True,
+    df = pd.read_csv(path, sep="\t")
+    long = df.melt(
+        id_vars=[ "subject", "side", "label_test", "label_retest", "method"],
+        value_vars=list(METRICS.keys()),
+        var_name="metric",
+        value_name="distance",
     )
+    return long
 
 
 def plot_overlap(df_overlaps):
-    """
-    Plot overlap values of reproducible basins across subjects and methods.
+    """Plot overlap values across subjects."""
 
-    Parameters
-    ----------
-    df_overlaps : pandas.DataFrame
-        DataFrame containing the subject, test basin, retest basin, overlap,
-        and method columns.
-
-    Returns
-    -------
-    plotly.graph_objects.Figure
-        Interactive Plotly figure showing overlap values for each basin.
-        Each point represents one test/retest basin pair. Subjects are shown
-        on the x-axis, methods are distinguished by color, and boxplots are
-        displayed for each subject and method.
-    """
     fig = px.box(
         df_overlaps,
-        title= "all overlap values",
+        title="All overlap values",
         x="subject",
         y="overlap",
         color="subject",
@@ -156,9 +96,7 @@ def plot_overlap(df_overlaps):
         },
     )
 
-    fig.update_traces(
-        boxmean="sd",
-    )
+    fig.update_traces(boxmean="sd")
 
     fig.update_yaxes(
         range=[0, 1],
@@ -166,48 +104,27 @@ def plot_overlap(df_overlaps):
         title="Overlap",
     )
 
-    fig.update_xaxes(
-        title="Subject",
-    )
+    fig.update_xaxes(title="Subject")
 
     return fig
 
 
 def plot_metric(data, metric, title):
-    """
-    Generate an interactive boxplot for one distance metric.
+    """Generate an interactive boxplot for one distance metric."""
 
-    Parameters
-    ----------
-    data : pandas.DataFrame
-        Long-format DataFrame containing subject, basin label, method,
-        metric, and distance columns.
-    metric : str
-        Metric to plot.
-    title : str
-        Title of the metric.
-
-    Returns
-    -------
-    fig : plotly.graph_objects.Figure
-        Plotly figure containing the boxplots.
-    """
-    subset = data.loc[
-        data["metric"] == metric
-    ].copy()
-
+    subset = data.loc[data["metric"] == metric].copy()
     subset["subject"] = subset["subject"].astype(str)
-    subset["label"] = subset["label"].astype(str)
+    subset["label_test"] = subset["label_test"].astype(str)
+    subset["label_retest"] = subset["label_retest"].astype(str)
 
     subjects = sorted(subset["subject"].unique())
-    methods = list(METHODS.values())
+    methods = sorted(subset["method"].dropna().unique())
 
     fig = go.Figure()
 
     for i, method in enumerate(methods):
-        method_data = subset.loc[
-            subset["method"] == method
-        ]
+
+        method_data = subset.loc[subset["method"] == method]
 
         fig.add_trace(
             go.Box(
@@ -221,47 +138,157 @@ def plot_metric(data, metric, title):
                 jitter=0.25,
                 pointpos=0,
                 customdata=method_data[
-                    ["subject", "label", "distance"]
+                    ["subject", "side", "label_test", "label_retest", "distance"]
                 ],
                 hovertemplate=(
                     "<b>Subject:</b> %{customdata[0]}<br>"
-                    "<b>Basin:</b> %{customdata[1]}<br>"
-                    "<b>Distance:</b> %{customdata[2]:.3f}"
+                    "<b>Side:</b> %{customdata[1]}<br>"
+                    "<b>Label test:</b> %{customdata[2]}<br>"
+                    "<b>Label retest:</b> %{customdata[3]}<br>"
+                    "<b>Distance:</b> %{customdata[4]:.3f}"
                     "<extra>%{fullData.name}</extra>"
                 ),
             )
         )
 
     n_subjects = subset["subject"].nunique()
-    n_basins = len(subset)
+    n_labels = len(subset)
 
     fig.update_layout(
         width=1800,
-        margin=dict(
-            l=0,
-            r=0,
-            t=50,
-            b=50,
-        ),
+        margin={
+            "l": 0,
+            "r": 0,
+            "t": 50,
+            "b": 50,
+        },
         boxmode="group",
         boxgap=0.3,
         boxgroupgap=0.1,
         title=(
             f"{title} distance "
             f"(n = {n_subjects} subjects, "
-            f"{n_basins} basin measurements)"
+            f"{n_labels} label measurements)"
         ),
-        legend=dict(
-            title="Method",
-        ),
+        legend={
+            "title": "Method",
+        },
     )
-    fig.update_traces(
-        boxmean="sd",
+
+    fig.update_traces(boxmean="sd")
+
+    fig.update_yaxes(
+        range=[0, max(method_data["distance"])],
+        #dtick=5,
+        title="Distance",
+    )
+
+    fig.update_xaxes(
+        title="Subject",
+        type="category",
+        categoryorder="array",
+        categoryarray=subjects,
+        range=[
+            -0.5,
+            n_subjects - 0.5,
+        ],
+    )
+
+    return fig
+
+
+def intermethod_metrics(data, metric, title):
+    """Generate an interactive boxplot for one inter-method distance metric."""
+
+    subset = data.loc[data["metric"] == metric].copy()
+
+    subset["subject"] = subset["subject"].astype(str)
+    subset["label"] = subset["label"].astype(str)
+    subset["method_1"] = subset["method_1"].astype(str)
+    subset["method_2"] = subset["method_2"].astype(str)
+    subset["session"] = subset["session"].astype(str)
+
+    subjects = sorted(subset["subject"].unique())
+
+    method_pairs = (
+        subset[["method_1", "method_2"]]
+        .drop_duplicates()
+        .itertuples(index=False, name=None)
+    )
+
+    fig = go.Figure()
+
+    for i, (m1, m2) in enumerate(method_pairs):
+
+        comparison = f"{m1}-{m2}"
+
+        data_pair = subset.loc[
+            (subset["method_1"] == m1)
+            & (subset["method_2"] == m2)
+        ]
+
+        fig.add_trace(
+            go.Box(
+                x=data_pair["subject"],
+                y=data_pair["distance"],
+                name=comparison,
+                offsetgroup=i,
+                alignmentgroup="all",
+                boxpoints="all",
+                boxmean="sd",
+                jitter=0.25,
+                pointpos=0,
+                customdata=data_pair[
+                    [
+                        "subject",
+                        "session",
+                        "side",
+                        "method_1",
+                        "method_2",
+                        "label",
+                        "distance",
+                    ]
+                ],
+                hovertemplate=(
+                    "<b>Subject:</b> %{customdata[0]}<br>"
+                    "<b>Session:</b> %{customdata[1]}<br>"
+                    "<b>Side:</b> %{customdata[2]}<br>"
+                    "<b>Method1:</b> %{customdata[3]}<br>"
+                    "<b>Method2:</b> %{customdata[4]}<br>"
+                    "<b>Label:</b> %{customdata[5]}<br>"
+                    "<b>Distance:</b> %{customdata[6]:.3f}"
+                    "<extra>%{fullData.name}</extra>"
+                ),
+            )
+        )
+
+    n_subjects = subset["subject"].nunique()
+    n_labels = len(subset)
+
+    fig.update_layout(
+        width=1800,
+        margin={
+            "l": 0,
+            "r": 0,
+            "t": 50,
+            "b": 50,
+        },
+        boxmode="group",
+        boxgap=0.3,
+        boxgroupgap=0.1,
+        title=(
+            f"{title} distance "
+            f"(n = {n_subjects} subjects, "
+            f"{n_labels} label measurements)"
+        ),
+        legend={
+            "title": "Comparison method",
+        },
     )
 
     fig.update_yaxes(
-        range=[0, 200],
-        dtick=5,
+        range=[0, max(data_pair["distance"])],
+        #dtick=5,
         title="Distance",
     )
 
@@ -274,17 +301,34 @@ def plot_metric(data, metric, title):
     )
 
     return fig
-
+    
 
 # ------------------------------------------------------------------
 # Inputs
 # ------------------------------------------------------------------
-df_overlaps = load_overlaps(
-    snakemake.input.match_tsv
+df_overlaps = load_overlaps(snakemake.input.match_tsv)
+
+df_distances_raw = pd.read_csv(
+    snakemake.input.all_methods_tsv,
+    sep="\t",
 )
 
-df_distances = load_distances(snakemake)
+df_distances_raw["log(hausdorff)"] = np.log10(
+    df_distances_raw["hausdorff"]
+)
 
+df_distances = df_distances_raw.melt(
+    id_vars=[
+        "subject",
+        "side",
+        "label_test",
+        "label_retest",
+        "method",
+    ],
+    value_vars=list(METRICS.keys()),
+    var_name="metric",
+    value_name="distance",
+)
 
 # ------------------------------------------------------------------
 # Outputs
@@ -292,13 +336,31 @@ df_distances = load_distances(snakemake)
 
 # Plot overlaps
 overlap_fig = plot_overlap(df_overlaps)
-overlap_fig.write_html(snakemake.output.hist_overlaps, include_plotlyjs="cdn")
+overlap_fig.write_html(
+    snakemake.output.hist_overlaps,
+    include_plotlyjs="cdn",
+)
 
 # Plot distances
+repro_output_names = {
+    "log(hausdorff)": "repro_log_hausdorff_plot",
+    "hausdorff": "repro_hausdorff_plot",
+    "mean_nn": "repro_mean_plot",
+    "p95_nn": "repro_p95_plot",
+}
+
+intermethod_output_names = {
+    "log(hausdorff)": "concordance_log_hausdorff_plot",
+    "hausdorff": "concordance_hausdorff_plot",
+    "mean_nn": "concordance_mean_plot",
+    "p95_nn": "concordance_p95_plot",
+}
+
 for metric, title in METRICS.items():
+
     output_file = getattr(
         snakemake.output,
-        f"{metric}_plot",
+        repro_output_names[metric],
     )
 
     plot_dist = plot_metric(
@@ -306,4 +368,56 @@ for metric, title in METRICS.items():
         metric=metric,
         title=title,
     )
-    plot_dist.write_html(output_file, include_plotlyjs="cdn")
+
+    plot_dist.write_html(
+        output_file,
+        include_plotlyjs="cdn",
+    )
+
+# ------------------------------------------------------------------
+# Plot inter-method distances
+# ------------------------------------------------------------------
+df_intermethod = pd.read_csv(
+    snakemake.input.intermethod_results_tsv,
+    sep="\t",
+)
+
+df_intermethod = df_intermethod.rename(
+    columns={"basin_label": "label"},
+)
+
+df_intermethod["log(hausdorff)"] = np.log10(
+    df_intermethod["hausdorff"]
+)
+
+df_intermethod = df_intermethod.melt(
+    id_vars=[
+        "subject",
+        "session",
+        "side",
+        "method_1",
+        "method_2",
+        "label",
+    ],
+    value_vars=list(METRICS.keys()),
+    var_name="metric",
+    value_name="distance",
+)
+
+for metric, title in METRICS.items():
+
+    output_file = getattr(
+        snakemake.output,
+        intermethod_output_names[metric],
+    )
+
+    plot_concordance = intermethod_metrics(
+        data=df_intermethod,
+        metric=metric,
+        title=title,
+    )
+
+    plot_concordance.write_html(
+        output_file,
+        include_plotlyjs="cdn",
+    )

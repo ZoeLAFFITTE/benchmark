@@ -1,95 +1,61 @@
+#!/usr/bin/env python
+
+"""Project distance metrics onto the template white surface."""
+
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import slam.io as sio
 import slam.plot as splt
 
 
-METHODS = ["cachia", "trace", "mindboggle"]
-METRICS = ["hausdorff", "mean", "p95"]
-
+METRICS = {
+    "log_hausdorff": "log_hausdorff",
+    "hausdorff": "hausdorff",
+    "mean": "mean_nn",
+    "p95": "p95_nn",
+}
 
 # -------------------------------------------------------------------------
-# Mesh atlas
+# Inputs
 # -------------------------------------------------------------------------
-
-white_template = sio.load_mesh(
-    snakemake.input.white_template_gii
-)
-
+white_template = sio.load_mesh(snakemake.input.white_template_gii)
 n_vertices = len(white_template.vertices)
 
 
-# -------------------------------------------------------------------------
-# Charger les 45 textures de bassins
-# -------------------------------------------------------------------------
-
-basins_test_reg = []
-
-for path in snakemake.input.basins_test_reg_gii:
-
-    texture = sio.load_texture(path).darray[0]
-
-    if len(texture) != n_vertices:
-        raise ValueError(
-            f"{path}: {len(texture)} vertices, "
-            f"expected {n_vertices}"
-        )
-
-    basins_test_reg.append(texture)
+# Load aggregated distance results
+df = pd.read_csv(snakemake.input.all_methods_tsv, sep="\t")
+df["log_hausdorff"] = np.log10(df["hausdorff"])
+df["subject"] = df["subject"].astype(str)
+df["label_test"] = df["label_test"].astype(int)
+df["label_retest"] = df["label_retest"].astype(int)
 
 
 # -------------------------------------------------------------------------
-# Charger les TSV
+# Outputs
 # -------------------------------------------------------------------------
+outputs = {
+    ("Cachia", "log_hausdorff"): snakemake.output.cachia_log_hausdorff,
+    ("Cachia", "hausdorff"): snakemake.output.cachia_hausdorff,
+    ("Cachia", "mean"): snakemake.output.cachia_mean,
+    ("Cachia", "p95"): snakemake.output.cachia_p95,
 
-tsv_paths = {
-    ("cachia", "hausdorff"):
-        snakemake.input.cachia_hausdorff_tsv,
+    ("Trace", "log_hausdorff"): snakemake.output.trace_log_hausdorff,
+    ("Trace", "hausdorff"): snakemake.output.trace_hausdorff,
+    ("Trace", "mean"): snakemake.output.trace_mean,
+    ("Trace", "p95"): snakemake.output.trace_p95,
 
-    ("cachia", "mean"):
-        snakemake.input.cachia_mean_tsv,
-
-    ("cachia", "p95"):
-        snakemake.input.cachia_p95_tsv,
-
-    ("trace", "hausdorff"):
-        snakemake.input.trace_hausdorff_tsv,
-
-    ("trace", "mean"):
-        snakemake.input.trace_mean_tsv,
-
-    ("trace", "p95"):
-        snakemake.input.trace_p95_tsv,
-
-    ("mindboggle", "hausdorff"):
-        snakemake.input.mindboggle_hausdorff_tsv,
-
-    ("mindboggle", "mean"):
-        snakemake.input.mindboggle_mean_tsv,
-
-    ("mindboggle", "p95"):
-        snakemake.input.mindboggle_p95_tsv,
+    ("Mindboggle", "log_hausdorff"): snakemake.output.mindboggle_log_hausdorff,
+    ("Mindboggle", "hausdorff"): snakemake.output.mindboggle_hausdorff,
+    ("Mindboggle", "mean"): snakemake.output.mindboggle_mean,
+    ("Mindboggle", "p95"): snakemake.output.mindboggle_p95,
 }
 
 
-data = {}
-
-for key, path in tsv_paths.items():
-
-    df = pd.read_csv(
-        path,
-        sep="\t",
-    )
-
-    df["subject"] = df["subject"].astype(str)
-
-    data[key] = df.set_index("subject")
-
-
 # -------------------------------------------------------------------------
-# Color scale
+# Projection
 # -------------------------------------------------------------------------
-
 colorscale = [
     [0.0, "white"],
     [0.1, "blue"],
@@ -97,131 +63,78 @@ colorscale = [
 ]
 
 
-# -------------------------------------------------------------------------
-# Outputs
-# -------------------------------------------------------------------------
+subjects = set(df["subject"].astype(str).unique())
 
-outputs = {
-    ("cachia", "hausdorff"):
-        snakemake.output.cachia_hausdorff,
-
-    ("cachia", "mean"):
-        snakemake.output.cachia_mean,
-
-    ("cachia", "p95"):
-        snakemake.output.cachia_p95,
-
-    ("trace", "hausdorff"):
-        snakemake.output.trace_hausdorff,
-
-    ("trace", "mean"):
-        snakemake.output.trace_mean,
-
-    ("trace", "p95"):
-        snakemake.output.trace_p95,
-
-    ("mindboggle", "hausdorff"):
-        snakemake.output.mindboggle_hausdorff,
-
-    ("mindboggle", "mean"):
-        snakemake.output.mindboggle_mean,
-
-    ("mindboggle", "p95"):
-        snakemake.output.mindboggle_p95,
+basins_per_sub = {
+    subject: path
+    for path in snakemake.input.basins_test_reg_gii
+    for subject in subjects
+    if subject in Path(path).name
 }
 
-
-# -------------------------------------------------------------------------
-# 9 plots
-# -------------------------------------------------------------------------
-
-for method in METHODS:
-
-    for metric in METRICS:
-
-        metric_data = data[(method, metric)]
-
-        subject_textures = []
-
-        # -------------------------------------------------------------
-        # Chaque sujet
-        # -------------------------------------------------------------
-
-        for subject_idx, (subject, row) in enumerate(
-            metric_data.iterrows()
-        ):
-
-            basins = basins_test_reg[subject_idx]
-
-            subject_texture = np.zeros(
-                n_vertices,
-                dtype=np.float32,
-            )
-
-            # ---------------------------------------------------------
-            # Chaque bassin
-            # ---------------------------------------------------------
-
-            for label, distance in row.items():
-
-                if pd.isna(distance):
-                    continue
-
-                label = int(label)
-
-                mask = basins == label
-
-                subject_texture[mask] = distance
-
-            subject_textures.append(subject_texture)
+for (method, metric), output_file in outputs.items():
 
 
-        # -------------------------------------------------------------
-        # Moyenne des 45 sujets
-        # -------------------------------------------------------------
+    df_method = df.loc[df["method"] == method]
 
-        mean_texture = np.mean(
-            np.stack(subject_textures),
-            axis=0,
-        )
+    subject_textures = []
 
-        # -------------------------------------------------------------
-        # Plot
-        # -------------------------------------------------------------
+    for subject, df_subject in df_method.groupby("subject", sort=False):
 
-        mesh_data = {
-            "vertices": white_template.vertices,
-            "faces": white_template.faces,
-            "title": f"{method.capitalize()} - {metric} - Mean",
-        }
+        basins_path = basins_per_sub[subject]
+        basins = sio.load_texture(basins_path).darray[0]
 
-        intensity_data = {
-            "values": mean_texture,
-            "mode": "vertex",
-            "cmin": 0,
-            "cmax": 30,
-            "colorbar": {
-                "title": "Distance",
-            },
-        }
+        subject_texture = np.zeros(n_vertices, dtype=np.float32)
 
-        display_settings = {
-            "template": "plotly_white",
-            "colorscale": colorscale,
-        }
+        for row in df_subject.itertuples(index=False):
 
-        fig = splt.plot_mesh(
-            mesh_data,
-            intensity_data,
-            display_settings,
-            caption=False,
-        )
+            label = row.label_test
+            distance = getattr(row, METRICS[metric])
 
-        # -------------------------------------------------------------
-        # Sauvegarder
-        # -------------------------------------------------------------
+            if pd.isna(distance):
+                continue
 
-        fig.write_html(
-            outputs[(method, metric)],
-            include_plotlyjs="cdn",
-        )
+            # Ignore la coupe médiale
+            # if label < 0:
+            #     continue
+
+            subject_texture[basins == label] = distance
+
+        subject_textures.append(subject_texture)
+
+    # Mean across subjects
+    mean_texture = np.mean(np.stack(subject_textures), axis=0)
+
+    cmax_color = max(mean_texture)
+    if metric == "log_hausdorff":
+        cmax_color = np.percentile(mean_texture, 75)
+
+    mesh_data = {
+        "vertices": white_template.vertices,
+        "faces": white_template.faces,
+        "title": f"{method} - {metric} - Mean",
+    }
+
+    intensity_data = {
+        "values": mean_texture,
+        "mode": "vertex",
+        "cmin": 0,
+        "cmax": cmax_color,
+        "colorbar": {
+            "title": metric,
+        },
+    }
+
+    display_settings = {
+        "template": "plotly_white",
+        "colorscale": colorscale,
+    }
+
+    fig = splt.plot_mesh(
+        mesh_data,
+        intensity_data,
+        display_settings,
+        caption=False,
+    )
+
+    fig.write_html(output_file, include_plotlyjs="cdn")

@@ -46,7 +46,7 @@ SUBJECTS = sorted(set(SUBJECTS))
 #SUBJECTS = ["877168"]
 #TESTS = ["HCP_test"]
 SIDE = "L"
-OUT = "results2"
+OUT = "results3"
 THR_BASINS = config["thr_basins"]
 
 
@@ -55,15 +55,26 @@ THR_BASINS = config["thr_basins"]
 # -----------------------------------------------------------------------------
 rule all:
     input:
-        f"{OUT}/plots/hausdorff.html",
-        f"{OUT}/plots/mean.html",
-        f"{OUT}/plots/p95.html",
+        f"{OUT}/aggregated/all_dist.tsv",
+        f"{OUT}/aggregated/intermethod_dist.tsv",
+        f"{OUT}/plots/repro_log_hausdorff.html",
+        f"{OUT}/plots/repro_hausdorff.html",
+        f"{OUT}/plots/repro_mean.html",
+        f"{OUT}/plots/repro_p95.html",
+        f"{OUT}/plots/concordance_log_hausdorff.html",
+        f"{OUT}/plots/concordance_hausdorff.html",
+        f"{OUT}/plots/concordance_mean.html",
+        f"{OUT}/plots/concordance_p95.html",
+        f"{OUT}/plots/all_overlaps.html",
+        f"{OUT}/plots/cachia_log_hausdorff_proj.html",
         f"{OUT}/plots/cachia_hausdorff_proj.html",
         f"{OUT}/plots/cachia_mean_proj.html",
         f"{OUT}/plots/cachia_p95_proj.html",
+        f"{OUT}/plots/trace_log_hausdorff_proj.html",
         f"{OUT}/plots/trace_hausdorff_proj.html",
         f"{OUT}/plots/trace_mean_proj.html",
         f"{OUT}/plots/trace_p95_proj.html",
+        f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
         f"{OUT}/plots/mindboggle_hausdorff_proj.html",
         f"{OUT}/plots/mindboggle_mean_proj.html",
         f"{OUT}/plots/mindboggle_p95_proj.html",
@@ -239,12 +250,17 @@ rule cachia:
     output:
         sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
 
-    log: f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
+    log:
+        f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
 
-    singularity: CONTAINERS["brainvisa"]
+    singularity:
+        CONTAINERS["brainvisa"]
 
     shell:
         """
+        mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
+
+        BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
         /casa/install/bin/bv_env \
             python -m brainvisa.axon.runprocess \
             --enabledb \
@@ -456,20 +472,14 @@ rule hausdorff_dist:
 
     params:
         thr_basins=THR_BASINS,
+        side=SIDE,
 
     output:
-        cachia_results_hausdorff_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_hausdorff.tsv",
-        cachia_results_mean_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_mean.tsv",
-        cachia_results_p95_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_p95.tsv",
+        cachia_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
+        trace_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
+        mindboggle_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
+        intermethod_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.pairwise_dist.tsv"
 
-        trace_results_hausdorff_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_hausdorff.tsv",
-        trace_results_mean_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_mean.tsv",
-        trace_results_p95_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_p95.tsv",
-
-        mindboggle_results_hausdorff_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_hausdorff.tsv",
-        mindboggle_results_mean_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_mean.tsv",
-        mindboggle_results_p95_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_p95.tsv",
-    
     conda: ENVIRONMENTS["slam"]
 
     log:
@@ -478,58 +488,30 @@ rule hausdorff_dist:
     script:
         "scripts/compute_hausdorff.py"
 
+
 #4. aggrégation final ----------------------------------------------------------
 rule aggregate_results:
     input:
-        cachia_results_hausdorff_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_hausdorff.tsv",
+        cachia_results_tsv = expand(
+            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
             sub=SUBJECTS
         ),
-        cachia_results_mean_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_mean.tsv",
+        trace_results_tsv = expand(
+            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
             sub=SUBJECTS
         ),
-        cachia_results_p95_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_p95.tsv",
+        mindboggle_results_tsv = expand(
+            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
             sub=SUBJECTS
         ),
-        trace_results_hausdorff_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_hausdorff.tsv",
+        intermethod_results_tsv = expand(
+            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.pairwise_dist.tsv",
             sub=SUBJECTS
         ),
-        trace_results_mean_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_mean.tsv",
-            sub=SUBJECTS
-        ),
-        trace_results_p95_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_p95.tsv",
-            sub=SUBJECTS
-        ),
-        mindboggle_results_hausdorff_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_hausdorff.tsv",
-            sub=SUBJECTS
-        ),
-        mindboggle_results_mean_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_mean.tsv",
-            sub=SUBJECTS
-        ),
-        mindboggle_results_p95_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_p95.tsv",
-            sub=SUBJECTS
-        )
 
     output:
-        cachia_hausdorff_tsv=f"{OUT}/aggregated/cachia_hausdorff.tsv",
-        cachia_mean_tsv=f"{OUT}/aggregated/cachia_mean.tsv",
-        cachia_p95_tsv=f"{OUT}/aggregated/cachia_p95.tsv",
-
-        trace_hausdorff_tsv=f"{OUT}/aggregated/trace_hausdorff.tsv",
-        trace_mean_tsv=f"{OUT}/aggregated/trace_mean.tsv",
-        trace_p95_tsv=f"{OUT}/aggregated/trace_p95.tsv",
-
-        mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
-        mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
-        mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv"
+        all_methods_tsv=f"{OUT}/aggregated/all_dist.tsv",
+        intermethod_results_tsv=f"{OUT}/aggregated/intermethod_dist.tsv",
 
     conda: ENVIRONMENTS["slam"]
 
@@ -542,54 +524,41 @@ rule aggregate_results:
 #5. plots finaux ---------------------------------------------------------------
 rule plots:
     input:
-        cachia_hausdorff_tsv=f"{OUT}/aggregated/cachia_hausdorff.tsv",
-        cachia_mean_tsv=f"{OUT}/aggregated/cachia_mean.tsv",
-        cachia_p95_tsv=f"{OUT}/aggregated/cachia_p95.tsv",
-        trace_hausdorff_tsv=f"{OUT}/aggregated/trace_hausdorff.tsv",
-        trace_mean_tsv=f"{OUT}/aggregated/trace_mean.tsv",
-        trace_p95_tsv=f"{OUT}/aggregated/trace_p95.tsv",
-        mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
-        mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
-        mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv",
+        all_methods_tsv=f"{OUT}/aggregated/all_dist.tsv",
+        intermethod_results_tsv=f"{OUT}/aggregated/intermethod_dist.tsv",
         match_tsv=expand(
             f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.matching.tsv",
             sub=SUBJECTS,
         ),
-        
+
     params:
         thr_basins=THR_BASINS,
 
     output:
-        hausdorff_plot=f"{OUT}/plots/hausdorff.html",
-        mean_plot=f"{OUT}/plots/mean.html",
-        p95_plot=f"{OUT}/plots/p95.html",
-        hist_overlaps=f"{OUT}/plots/all_overlaps.html"
+        repro_hausdorff_plot=f"{OUT}/plots/repro_hausdorff.html",
+        repro_log_hausdorff_plot=f"{OUT}/plots/repro_log_hausdorff.html",
+        repro_mean_plot=f"{OUT}/plots/repro_mean.html",
+        repro_p95_plot=f"{OUT}/plots/repro_p95.html",
+        hist_overlaps=f"{OUT}/plots/all_overlaps.html",
+        concordance_log_hausdorff_plot=f"{OUT}/plots/concordance_log_hausdorff.html",
+        concordance_hausdorff_plot=f"{OUT}/plots/concordance_hausdorff.html",
+        concordance_mean_plot=f"{OUT}/plots/concordance_mean.html",
+        concordance_p95_plot=f"{OUT}/plots/concordance_p95.html",
 
-    
-    conda: ENVIRONMENTS["slam"]
+    conda:
+        ENVIRONMENTS["slam"]
 
     log:
         f"{OUT}/aggregated/plot.log"
+
     script:
         "scripts/plot_results.py"
 
 
 rule proj:
     input:
-        cachia_hausdorff_tsv=f"{OUT}/aggregated/cachia_hausdorff.tsv",
-        cachia_mean_tsv=f"{OUT}/aggregated/cachia_mean.tsv",
-        cachia_p95_tsv=f"{OUT}/aggregated/cachia_p95.tsv",
-
-        trace_hausdorff_tsv=f"{OUT}/aggregated/trace_hausdorff.tsv",
-        trace_mean_tsv=f"{OUT}/aggregated/trace_mean.tsv",
-        trace_p95_tsv=f"{OUT}/aggregated/trace_p95.tsv",
-
-        mindboggle_hausdorff_tsv=f"{OUT}/aggregated/mindboggle_hausdorff.tsv",
-        mindboggle_mean_tsv=f"{OUT}/aggregated/mindboggle_mean.tsv",
-        mindboggle_p95_tsv=f"{OUT}/aggregated/mindboggle_p95.tsv",
-
+        all_methods_tsv=f"{OUT}/aggregated/all_dist.tsv",
         white_template_gii=f"{ATLAS}.{SIDE}.{WHITETEMP}.surf.gii",
-
         basins_test_reg_gii=expand(
             f"{OUT}/HCP_test/{{sub}}/postproc/"
             f"{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.gii",
@@ -597,14 +566,17 @@ rule proj:
         )
 
     output:
+        cachia_log_hausdorff=f"{OUT}/plots/cachia_log_hausdorff_proj.html",
         cachia_hausdorff=f"{OUT}/plots/cachia_hausdorff_proj.html",
         cachia_mean=f"{OUT}/plots/cachia_mean_proj.html",
         cachia_p95=f"{OUT}/plots/cachia_p95_proj.html",
 
+        trace_log_hausdorff=f"{OUT}/plots/trace_log_hausdorff_proj.html",
         trace_hausdorff=f"{OUT}/plots/trace_hausdorff_proj.html",
         trace_mean=f"{OUT}/plots/trace_mean_proj.html",
         trace_p95=f"{OUT}/plots/trace_p95_proj.html",
 
+        mindboggle_log_hausdorff=f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
         mindboggle_hausdorff=f"{OUT}/plots/mindboggle_hausdorff_proj.html",
         mindboggle_mean=f"{OUT}/plots/mindboggle_mean_proj.html",
         mindboggle_p95=f"{OUT}/plots/mindboggle_p95_proj.html",

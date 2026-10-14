@@ -506,7 +506,8 @@ def filter_skeleton_dijkstra(white_mesh, skeleton, dpfstar_reversed, indices_fol
     )
 
     if pit not in graph:
-        raise ValueError("Le pit sulcal n'appartient pas au squelette.")
+        pit = int(skeleton[np.argmax(dpfstar_reversed[skeleton])])
+        print("Le pit sulcal n'appartient pas au squelette.")
 
     # Identifier les extrémités du squelette initial
     endpoints = [
@@ -779,6 +780,8 @@ def pruning(graph, segments, bifurcations, pit, seuil_seg=1):
 
 if __name__ == "__main__":
 
+    seuil_seg = getattr(snakemake.params, "seuil", 0)
+
     #paths
     white_path = snakemake.input.white_gii
     dpf_white_path = snakemake.input.dpf_white_gii
@@ -791,10 +794,11 @@ if __name__ == "__main__":
 
     #séléction des bassins reproductibles
     labels_basins = np.unique(basins)
+    print(labels_basins)
 
     vertices_dic = {}
     for label in labels_basins:
-        vertices = np.where(basins_test == label)[0]
+        vertices = np.where(basins == label)[0]
         vertices_dic[label] = vertices
 
     #res finaux
@@ -802,8 +806,12 @@ if __name__ == "__main__":
     all_borders = np.zeros(len(dpf_star), dtype=bool)
     all_skeletons = np.zeros(len(dpf_star), dtype=bool)
     all_paths = np.zeros(len(dpf_star), dtype=int)
+    global_probability = np.zeros(len(white_mesh.vertices), dtype=int)
+    all_pits = []
+    all_bifurcations = []
+    all_endpoints = []
 
-    dpfstar_reversed = [-x for x in dpf_star]
+    dpfstar_reversed = dpf_star #[-x for x in dpf_star]
     dpfstar_reversed = np.asarray(dpfstar_reversed, dtype=float)
 
     #voisnage
@@ -919,73 +927,66 @@ if __name__ == "__main__":
         print("\n" + "-" * 50)
         print("PRUNING : filtrage")
         print("-" * 50)
-        pruned_graph = pruning(graph, segments, bifurcations, pit, seuil_seg=2)
+        pruned_graph = pruning(graph, segments, bifurcations, pit, seuil_seg=seuil_seg)
 
         print("\n" + "-" * 50)
         print(f"FIN BASIN: {label}")
         print("-" * 50)
         all_skeletons[list(pruned_graph.nodes)] = True
 
-        counts = np.unique(probability_map[probability_map > 0])
-        for count in counts:
-            indices = np.flatnonzero(probability_map == count)
-            all_paths[indices] = count
-        
-        all_paths[pit] = 100
-        all_paths[bifurcations] = 200
-        all_paths[endpoints] = 300
+        # Accumulation des résultats de ce basin (les basins sont disjoints)
+        mask = probability_map > 0
+        global_probability[mask] = probability_map[mask]
+        all_pits.append(int(pit))
+        all_bifurcations.extend(int(v) for v in bifurcations)
+        all_endpoints.extend(int(v) for v in endpoints)
     
 
     print("\n" + "-" * 50)
     print(f"FIN: Sauvegarde des textures")
     print("-" * 50)
-    
-    skeletons = stex.TextureND(darray=all_skeletons)
-    sio.write_texture(skeletons, snakemake.output.skeletons)
+    # Texture finale des chemins (une seule fois, après tous les basins)
+    all_paths[global_probability > 0] = global_probability[global_probability > 0]
+    all_paths[all_pits] = 100
+    all_paths[all_bifurcations] = 200
+    all_paths[all_endpoints] = 300
 
-    borders = stex.TextureND(darray=all_borders)
-    sio.write_texture(borders, snakemake.output.borders)
+    print("\n" + "-" * 50)
+    print("FIN: Sauvegarde des textures")
+    print("-" * 50)
 
-    gyri = stex.TextureND(darray=all_basins)
-    sio.write_texture(gyri, snakemake.output.basins)
+    sio.write_texture(stex.TextureND(darray=all_skeletons), snakemake.output.skeletons)
+    sio.write_texture(stex.TextureND(darray=all_borders), snakemake.output.borders)
+    sio.write_texture(stex.TextureND(darray=all_basins), snakemake.output.basins)
+    sio.write_texture(stex.TextureND(darray=all_paths), snakemake.output.proba)
 
-    proba = stex.TextureND(darray=all_paths)
-    sio.write_texture(proba, snakemake.output.proba)
-
-    #plots
+    # ------------------------------------------------------------------
+    # Figure : tous les basins
+    # ------------------------------------------------------------------
     fig = splt.plot_mesh(
-        {
-            "vertices": white_mesh.vertices,
-            "faces": white_mesh.faces,
-        },
-        {
-            "values": dpfstar_reversed,
-            "mode": "vertex",
-        },
-        {
-            "template": "plotly_white",
-            "colorscale": "Sunset",
-        },
+        {"vertices": white_mesh.vertices, "faces": white_mesh.faces},
+        {"values": dpfstar_reversed, "mode": "vertex"},
+        {"template": "plotly_white", "colorscale": "Sunset"},
         caption=False,
     )
 
-    # Afficher les sommets selon leur nombre de passages
-    counts = np.unique(probability_map[probability_map > 0])
-    colors = px.colors.sample_colorscale(
-        "Turbo",
-        np.linspace(0.05, 0.95, max(len(counts), 2)),
-    )
+    mesh_vertices = np.asarray(white_mesh.vertices)
+    mesh_normals = np.asarray(white_mesh.vertex_normals)
 
-    points = white_mesh.vertices + 0.3 * white_mesh.vertex_normals
-
-    # Décaler les marqueurs le long des normales du maillage
     def lifted(indices, offset):
         indices = np.asarray(indices, dtype=int)
-        return vertices[indices] + offset * normals[indices]
+        return mesh_vertices[indices] + offset * mesh_normals[indices]
+
+    points = lifted(np.arange(len(mesh_vertices)), 0.3)
+
+    # Sommets selon leur nombre de passages (tous basins confondus)
+    counts = np.unique(global_probability[global_probability > 0])
+    colors = px.colors.sample_colorscale(
+        "Turbo", np.linspace(0.05, 0.95, max(len(counts), 2))
+    )
 
     for count, color in zip(counts, colors):
-        indices = np.flatnonzero(probability_map == count)
-
+        indices = np.flatnonzero(global_probability == count)
         fig.add_trace(
             go.Scatter3d(
                 x=points[indices, 0],
@@ -994,38 +995,38 @@ if __name__ == "__main__":
                 mode="markers",
                 marker={"size": 3, "color": color},
                 name=f"{count} passage{'s' if count > 1 else ''}",
-                text=[
-                    f"vertex {v}<br>{count} passage(s)"
-                    for v in indices
-                ],
+                text=[f"vertex {v}<br>{count} passage(s)" for v in indices],
                 hoverinfo="text",
             )
         )
 
-    # Ajouter les bifurcations, les extrémités et le pit
-    fig.add_trace(
-        splt.plot_points(
-            lifted(bifurcations, 0.4),
-            marker={"size": 5, "color": "grey", "symbol": "diamond"},
+    # Bifurcations, extrémités et pits de tous les basins
+    if all_bifurcations:
+        fig.add_trace(
+            splt.plot_points(
+                lifted(all_bifurcations, 0.4),
+                marker={"size": 5, "color": "grey", "symbol": "diamond"},
+            )
         )
-    )
 
-    fig.add_trace(
-        splt.plot_points(
-            lifted(endpoints, 0.4),
-            marker={"size": 5, "color": "black", "symbol": "diamond"},
+    if all_endpoints:
+        fig.add_trace(
+            splt.plot_points(
+                lifted(all_endpoints, 0.4),
+                marker={"size": 5, "color": "black", "symbol": "diamond"},
+            )
         )
-    )
 
-    fig.add_trace(
-        splt.plot_points(
-            lifted([pit], 1.4),
-            marker={"size": 7, "color": "red", "symbol": "diamond"},
+    if all_pits:
+        fig.add_trace(
+            splt.plot_points(
+                lifted(all_pits, 1.4),
+                marker={"size": 7, "color": "red", "symbol": "diamond"},
+            )
         )
-    )
 
-    # Tracer les arêtes du maillage en noir
-    edge_vertices = vertices[white_mesh.edges_unique]
+    # Arêtes du maillage (une seule fois)
+    edge_vertices = mesh_vertices[white_mesh.edges_unique]
     coords = np.full((len(edge_vertices), 3, 3), np.nan)
     coords[:, :2, :] = edge_vertices
 

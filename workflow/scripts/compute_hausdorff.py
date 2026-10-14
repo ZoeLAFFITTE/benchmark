@@ -221,158 +221,79 @@ def compute_intermethod_hausdorff(
 
 df_matches = pd.read_csv(snakemake.input.match_tsv, sep="\t")
 df_matches["overlap"] = df_matches["overlap"].astype(float)
-
 df_reproducible = df_matches[df_matches["overlap"] >= snakemake.params.thr_basins]
 
 sphere_reg_test = sio.load_mesh(snakemake.input.sphere_reg_gii_test)
 sphere_reg_retest = sio.load_mesh(snakemake.input.sphere_reg_gii_retest)
 
 subject = snakemake.wildcards.sub
-side = snakemake.params.side
+side = snakemake.wildcards.side
 
 # -------------------------------------------------------------------------
-# Trace
+# Méthodes actives : nom -> (texture test, texture retest)
+# Pour réactiver Trace/Cachia/Mindboggle : ajouter une entrée ici, et les
+# inputs/outputs correspondants dans la règle.
 # -------------------------------------------------------------------------
-trace_test = sio.load_texture(snakemake.input.sulci_trace_labeled_test).darray[0]
-trace_retest = sio.load_texture(snakemake.input.sulci_trace_labeled_retest).darray[0]
-
-trace_results = compute_sulci_hausdorff(
-    trace_test,
-    trace_retest,
-    sphere_reg_test,
-    sphere_reg_retest,
-    df_reproducible,
-    subject,
-    side,
-)
-
-trace_results.to_csv(snakemake.output.trace_results_tsv, sep="\t", index=False)
-
-print(trace_results)
-
-# -------------------------------------------------------------------------
-# Cachia
-# -------------------------------------------------------------------------
-cachia_test = sio.load_texture(snakemake.input.sulci_cachia_labeled_test).darray[0]
-cachia_retest = sio.load_texture(snakemake.input.sulci_cachia_labeled_retest).darray[0]
-
-cachia_results = compute_sulci_hausdorff(
-    cachia_test,
-    cachia_retest,
-    sphere_reg_test,
-    sphere_reg_retest,
-    df_reproducible,
-    subject,
-    side,
-)
-
-cachia_results.to_csv(snakemake.output.cachia_results_tsv, sep="\t", index=False)
-
-# -------------------------------------------------------------------------
-# Mindboggle
-# -------------------------------------------------------------------------
-mindboggle_test = sio.load_texture(snakemake.input.sulci_mindboggle_labeled_test).darray[0]
-mindboggle_retest = sio.load_texture(snakemake.input.sulci_mindboggle_labeled_retest).darray[0]
-
-mindboggle_results = compute_sulci_hausdorff(
-    mindboggle_test,
-    mindboggle_retest,
-    sphere_reg_test,
-    sphere_reg_retest,
-    df_reproducible,
-    subject,
-    side,
-)
-
-mindboggle_results.to_csv(snakemake.output.mindboggle_results_tsv, sep="\t", index=False)
-
-# -------------------------------------------------------------------------
-# Inter-method
-# -------------------------------------------------------------------------
-
 methods_test = {
-    "Trace": trace_test,
-    "Cachia": cachia_test,
-    "Mindboggle": mindboggle_test,
+    "Zoe": sio.load_texture(snakemake.input.sulci_zoe_labeled_test).darray[0],
 }
-
 methods_retest = {
-    "Trace": trace_retest,
-    "Cachia": cachia_retest,
-    "Mindboggle": mindboggle_retest,
+    "Zoe": sio.load_texture(snakemake.input.sulci_zoe_labeled_retest).darray[0],
 }
 
-intermethod_results = []
-
-method_pairs = combinations(
-    methods_test.keys(),
-    2,
-)
-
 # -------------------------------------------------------------------------
-# Compare methods within reproducible basins
+# Reproductibilité test/retest
 # -------------------------------------------------------------------------
+RESULT_COLS = [
+    "subject", "side", "label_test", "label_retest",
+    "hausdorff", "mean_nn", "p95_nn",
+]
 
-for method_1, method_2 in method_pairs:
+zoe_results = compute_sulci_hausdorff(
+    methods_test["Zoe"],
+    methods_retest["Zoe"],
+    sphere_reg_test,
+    sphere_reg_retest,
+    df_reproducible,
+    subject,
+    side,
+).reindex(columns=RESULT_COLS)
 
-    # ---------------------------------------------------------------------
-    # Test
-    # ---------------------------------------------------------------------
+zoe_results.to_csv(snakemake.output.zoe_results_tsv, sep="\t", index=False)
 
-    labels_test = df_reproducible["test_basin"].unique()
+# # -------------------------------------------------------------------------
+# # Inter-méthodes (vide tant qu'il n'y a qu'une seule méthode)
+# # -------------------------------------------------------------------------
+# INTER_COLS = [
+#     "subject", "session", "side", "method_1", "method_2",
+#     "basin_label", "hausdorff", "mean_nn", "p95_nn",
+# ]
 
-    results = compute_intermethod_hausdorff(
-        methods_test[method_1],
-        methods_test[method_2],
-        sphere_reg_test,
-        labels_test,
-    )
+# intermethod_results = []
 
-    for result in results:
-        intermethod_results.append(
-            {
-                "subject": subject,
-                "session": "test",
-                "side": side,
-                "method_1": method_1,
-                "method_2": method_2,
-                **result,
-            }
-        )
+# for method_1, method_2 in combinations(methods_test.keys(), 2):
+#     for session, methods, mesh, labels in (
+#         ("test", methods_test, sphere_reg_test,
+#          df_reproducible["test_basin"].unique()),
+#         ("retest", methods_retest, sphere_reg_retest,
+#          df_reproducible["retest_basin"].unique()),
+#     ):
+#         results = compute_intermethod_hausdorff(
+#             methods[method_1], methods[method_2], mesh, labels,
+#         )
+#         for result in results:
+#             intermethod_results.append(
+#                 {
+#                     "subject": subject,
+#                     "session": session,
+#                     "side": side,
+#                     "method_1": method_1,
+#                     "method_2": method_2,
+#                     **result,
+#                 }
+#             )
 
-    # ---------------------------------------------------------------------
-    # Retest
-    # ---------------------------------------------------------------------
-
-    labels_retest = df_reproducible["retest_basin"].unique()
-
-    results = compute_intermethod_hausdorff(
-        methods_retest[method_1],
-        methods_retest[method_2],
-        sphere_reg_retest,
-        labels_retest,
-    )
-
-    for result in results:
-        intermethod_results.append(
-            {
-                "subject": subject,
-                "session": "retest",
-                "side": side,
-                "method_1": method_1,
-                "method_2": method_2,
-                **result,
-            }
-        )
-
-# -------------------------------------------------------------------------
-# Save results
-# -------------------------------------------------------------------------
-
-df_intermethod = pd.DataFrame(intermethod_results)
-
-df_intermethod.to_csv(
-    snakemake.output.intermethod_results_tsv,
-    sep="\t",
-    index=False,
-)
+# df_intermethod = pd.DataFrame(intermethod_results).reindex(columns=INTER_COLS)
+# df_intermethod.to_csv(
+#     snakemake.output.intermethod_results_tsv, sep="\t", index=False,
+# )

@@ -37,16 +37,17 @@ WHITETEMP = MESH["white.template"]
 # TESTS, SUBJECTS = glob_wildcards(f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}")
 # SUBJECTS = sorted(set(SUBJECTS))
 
-TESTS, SUBJECTS, _ = glob_wildcards(
+TESTS, SUBJECTS, SIDE = glob_wildcards(
     f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_basins_100.0_0.005_0.0.gii"
 )
-SUBJECTS = sorted(set(SUBJECTS))
+#SUBJECTS = sorted(set(SUBJECTS))
 
 # Temporary restriction for development/testing.
-#SUBJECTS = ["877168"]
-#TESTS = ["HCP_test"]
-SIDE = "L"
-OUT = "results3"
+TESTS = sorted(set(TESTS))[:2]
+SUBJECTS = sorted(set(SUBJECTS))[:5]
+SIDE = sorted(set(SIDE))[:2]
+
+OUT = "zoe_algo"
 THR_BASINS = config["thr_basins"]
 
 
@@ -66,18 +67,22 @@ rule all:
         f"{OUT}/plots/concordance_mean.html",
         f"{OUT}/plots/concordance_p95.html",
         f"{OUT}/plots/all_overlaps.html",
-        f"{OUT}/plots/cachia_log_hausdorff_proj.html",
-        f"{OUT}/plots/cachia_hausdorff_proj.html",
-        f"{OUT}/plots/cachia_mean_proj.html",
-        f"{OUT}/plots/cachia_p95_proj.html",
-        f"{OUT}/plots/trace_log_hausdorff_proj.html",
-        f"{OUT}/plots/trace_hausdorff_proj.html",
-        f"{OUT}/plots/trace_mean_proj.html",
-        f"{OUT}/plots/trace_p95_proj.html",
-        f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
-        f"{OUT}/plots/mindboggle_hausdorff_proj.html",
-        f"{OUT}/plots/mindboggle_mean_proj.html",
-        f"{OUT}/plots/mindboggle_p95_proj.html",
+        f"{OUT}/plots/zoe_log_hausdorff_proj.html",
+        f"{OUT}/plots/zoe_hausdorff_proj.html",
+        f"{OUT}/plots/zoe_mean_proj.html",
+        f"{OUT}/plots/zoe_p95_proj.html",
+        # f"{OUT}/plots/cachia_log_hausdorff_proj.html",
+        # f"{OUT}/plots/cachia_hausdorff_proj.html",
+        # f"{OUT}/plots/cachia_mean_proj.html",
+        # f"{OUT}/plots/cachia_p95_proj.html",
+        # f"{OUT}/plots/trace_log_hausdorff_proj.html",
+        # f"{OUT}/plots/trace_hausdorff_proj.html",
+        # f"{OUT}/plots/trace_mean_proj.html",
+        # f"{OUT}/plots/trace_p95_proj.html",
+        # f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
+        # f"{OUT}/plots/mindboggle_hausdorff_proj.html",
+        # f"{OUT}/plots/mindboggle_mean_proj.html",
+        # f"{OUT}/plots/mindboggle_p95_proj.html",
         expand(
             f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{SIDE}.{WHITE}.{BASIN}.overlap.gii",
             sub=SUBJECTS,
@@ -104,63 +109,63 @@ rule all:
 # PREPROCESSING
 # =============================================================================
 
-# 1. GIFTI -> VTK -------------------------------------------------------------
-rule fs_convert_gii_vtk:
-    input:
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
-        pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{PIAL}.surf.gii"
+# # 1. GIFTI -> VTK -------------------------------------------------------------
+# rule fs_convert_gii_vtk:
+#     input:
+#         white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+#         pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{PIAL}.surf.gii"
 
-    output:
-        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk",
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
+#     output:
+#         white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk",
+#         pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
 
-    log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log"
+#     log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log"
 
-    singularity: CONTAINERS["mindboggle"]
+#     singularity: CONTAINERS["mindboggle"]
 
-    shell:
-        """
-        mris_convert {input.white_gii} {output.white_vtk}
-        mris_convert {input.pial_gii} {output.pial_vtk}
-        """
-
-
-# 2. GIFTI -> FreeSurfer texture ----------------------------------------------
-rule fs_convert_gii_tk:
-    input:
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{PIAL}.surf.gii",
-        aparc_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{APARC}.gii",
-        curv_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{CURV}.gii"
-
-    output:
-        white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}",
-        pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}",
-        curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.curv",
-        curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.curv",
-        aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.aparc.annot",
-        aparc_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.aparc.annot"
-
-    params:
-        prefix=f"{OUT}/{{test}}/{{sub}}/preproc/"
+#     shell:
+#         """
+#         mris_convert {input.white_gii} {output.white_vtk}
+#         mris_convert {input.pial_gii} {output.pial_vtk}
+#         """
 
 
-    log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.convert_gii_tk.log"
+# # 2. GIFTI -> FreeSurfer texture ----------------------------------------------
+# rule fs_convert_gii_tk:
+#     input:
+#         white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         pial_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{PIAL}.surf.gii",
+#         aparc_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{APARC}.gii",
+#         curv_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{CURV}.gii"
 
-    singularity: CONTAINERS["mindboggle"]
+#     output:
+#         white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}",
+#         pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}",
+#         curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.curv",
+#         curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.curv",
+#         aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.pial.aparc.annot",
+#         aparc_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.white.aparc.annot"
 
-    shell:
-        """
-        mris_convert {input.pial_gii} {output.pial_tk}
-        mris_convert {input.white_gii} {output.white_tk}
-        mris_convert -c {input.curv_gii} {input.pial_gii} {output.curv_pial_tk}
-        mris_convert -c {input.curv_gii} {input.white_gii} {output.curv_white_tk}
-        mris_convert --annot {input.aparc_gii} {input.white_gii} {output.aparc_white_tk}
-        mris_convert --annot {input.aparc_gii} {input.pial_gii} {output.aparc_pial_tk}
+#     params:
+#         prefix=f"{OUT}/{{test}}/{{sub}}/preproc/"
 
-        mv "$(dirname {output.curv_pial_tk})/unknown.$(basename {output.curv_pial_tk})" {output.curv_pial_tk}
-        mv "$(dirname {output.curv_white_tk})/unknown.$(basename {output.curv_white_tk})" {output.curv_white_tk}
-        """
+
+#     log: f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.convert_gii_tk.log"
+
+#     singularity: CONTAINERS["mindboggle"]
+
+#     shell:
+#         """
+#         mris_convert {input.pial_gii} {output.pial_tk}
+#         mris_convert {input.white_gii} {output.white_tk}
+#         mris_convert -c {input.curv_gii} {input.pial_gii} {output.curv_pial_tk}
+#         mris_convert -c {input.curv_gii} {input.white_gii} {output.curv_white_tk}
+#         mris_convert --annot {input.aparc_gii} {input.white_gii} {output.aparc_white_tk}
+#         mris_convert --annot {input.aparc_gii} {input.pial_gii} {output.aparc_pial_tk}
+
+#         mv "$(dirname {output.curv_pial_tk})/unknown.$(basename {output.curv_pial_tk})" {output.curv_pial_tk}
+#         mv "$(dirname {output.curv_white_tk})/unknown.$(basename {output.curv_white_tk})" {output.curv_white_tk}
+#         """
 
 
 # 3. Compute textures ---------------------------------------------------------
@@ -179,219 +184,173 @@ rule compute_textures:
     script:"scripts/compute_textures.py"
 
 
-# 4. Aggregate preprocessing log ----------------------------------------------
-rule aggregate_preproc_log:
-    input:
-        gii_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log",
-        gii_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_tk.log",
-        texture=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.texture.log"
+# # 4. Aggregate preprocessing log ----------------------------------------------
+# rule aggregate_preproc_log:
+#     input:
+#         gii_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_vtk.log",
+#         gii_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.convert_gii_tk.log",
+#         texture=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.texture.log"
 
-    output:
-        log=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.preproc.log"
+#     output:
+#         log=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.preproc.log"
 
-    shell:
-        """
-        cat {input.gii_vtk} > {output.log}
-        cat {input.gii_tk} >> {output.log}
-        cat {input.texture} >> {output.log}
+#     shell:
+#         """
+#         cat {input.gii_vtk} > {output.log}
+#         cat {input.gii_tk} >> {output.log}
+#         cat {input.texture} >> {output.log}
 
-        rm {input.gii_vtk} \
-           {input.gii_tk} \
-           {input.texture}
-        """
+#         rm {input.gii_vtk} \
+#            {input.gii_tk} \
+#            {input.texture}
+#         """
 
 # =============================================================================
 # FUNDI EXTRACTION
 # =============================================================================
+# 0. Zoé_algo -----------------------------------------------------------------
+rule zoe:
 
-# 1. Trace --------------------------------------------------------------------
-rule trace:
     input:
-        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk"
+        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
+        dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
+        basins_gii =f"{DATA_TEST}/{{test}}_{{sub}}_{SIDE}_{BASIN}.gii"
 
     output:
-        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
-        sulci_cart=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.cart",
-        sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.bary"
+        skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.sulci.gii",
+        borders = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.folds.gii",
+        basins = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.gyri.gii",
+        proba = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.paths.gii",
+        fig = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.plot.html",
 
-    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.trace.log"
+    conda: ENVIRONMENTS["slam"]
+    
+    log: f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.zoe.log"
 
-    params:
-        output_prefix=(
-            lambda wc:
-            f"{OUT}/{wc.test}/{wc.sub}/trace/"
-            f"{wc.sub}.{SIDE}.{WHITE}"
-        )
+    script:
+        "scripts/zoe_algo.py"
 
-    singularity: CONTAINERS["trace"]
-
-    threads: 5
-
-    shell:
-        """
-        time CurveExtraction \
-            --inputSurface {input.white_vtk} \
-            --outputCurve {params.output_prefix} \
-            --nThreads {threads} \
-            --sulcus \
-            --cart \
-            --bary \
-            --noVtk \
-            2>&1 | tee {log}
-        """
-
-
-# 2. Cachia -------------------------------------------------------------------
-rule cachia:
-    input:
-        mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
-        dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
-
-    output:
-        sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
-
-    log:
-        f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
-
-    singularity:
-        CONTAINERS["brainvisa"]
-
-    shell:
-        """
-        mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
-
-        BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
-        /casa/install/bin/bv_env \
-            python -m brainvisa.axon.runprocess \
-            --enabledb \
-            surface_sulci_dpf \
-            {input.mesh} \
-            {input.dpf} \
-            {output.sulci} \
-            -0.005 10 10 \
-            2>&1 | tee {log}
-        """
-
-
-# 3. Mindboggle ---------------------------------------------------------------
-include: "rules/mindboggle.smk"
-
-
-# 4. ABLE ---------------------------------------------------------------------
-
-# ABLE requires BOTH hemispheres.
-#
-# The {side} wildcard is used only in convert_gii_tk.
-# Here we explicitly request L and R outputs.
-
-# rule able:
+# # 1. Trace --------------------------------------------------------------------
+# rule trace:
 #     input:
-#         lh_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.{WHITE}",
-#         lh_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.{PIAL}",
-#         lh_curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.pial.curv",
-#         lh_curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.white.curv",
-#         lh_aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.pial.aparc.annot",
-
-#         rh_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.{WHITE}",
-#         rh_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.{PIAL}",
-#         rh_curv_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.pial.curv",
-#         rh_curv_white_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.white.curv",
-#         rh_aparc_pial_tk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.pial.aparc.annot",
+#         white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.vtk"
 
 #     output:
-#         mat=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.subj.mat"
+#         sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
+#         sulci_cart=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.cart",
+#         sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.bary"
 
-#     singularity: CONTAINERS["able"]
+#     log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.trace.log"
 
-#     log: f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.able.log"
+#     params:
+#         output_prefix=(
+#             lambda wc:
+#             f"{OUT}/{wc.test}/{wc.sub}/trace/"
+#             f"{wc.sub}.{SIDE}.{WHITE}"
+#         )
+
+#     singularity: CONTAINERS["trace"]
+
+#     threads: 5
 
 #     shell:
 #         """
-#         export DISPLAY=
-
-#         /usr/bin/ABLE_generic \
-#             {input.lh_pial_tk} \
-#             {input.lh_curv_pial_tk} \
-#             {input.lh_white_tk} \
-#             {input.lh_curv_white_tk} \
-#             {input.lh_aparc_pial_tk} \
-#             {input.rh_pial_tk} \
-#             {input.rh_curv_pial_tk} \
-#             {input.rh_white_tk} \
-#             {input.rh_curv_white_tk} \
-#             {input.rh_aparc_pial_tk} \
-#             {output.mat} \
+#         time CurveExtraction \
+#             --inputSurface {input.white_vtk} \
+#             --outputCurve {params.output_prefix} \
+#             --nThreads {threads} \
+#             --sulcus \
+#             --cart \
+#             --bary \
+#             --noVtk \
 #             2>&1 | tee {log}
 #         """
 
-# =============================================================================
-# POST PROC
-# =============================================================================
 
-#1. VTIK -> GIFTII ------------------------------------------------------------
-rule mindboggle_convert_gii:
-    input:
-        mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
-        curv_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk",
-        depth_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk",
-        depth_rescaled_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.vtk",
-        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.vtk",
-        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.vtk",
-
-    output:
-        curv_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.mean_curv.gii",
-        depth_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.depth.gii",
-        depth_rescaled_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.depth_rescaled.gii",
-        folds_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.folds.gii",
-        fundi_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.gii"
-
-    conda: ENVIRONMENTS["slam"]
-    
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.convert_vtk_gii.log"
-
-    script:
-        "scripts/mindboggle_convert_scalar_gii.py"
-
-#2. Trace -> GIFTII ------------------------------------------------------------
-rule trace_convert_scalar_gii:
-    input:
-        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
-        sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.bary",
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
-
-    output:
-        sulci_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.gii",
-        sulci_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_c.gii",
-        sulci_bary_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary.gii",
-        sulci_bary_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.gii",
-    
-    conda: ENVIRONMENTS["slam"]
-
-    log:
-        f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.convert_scurve.log"
-
-    script:
-        "scripts/trace_convert_scalar_gii.py"
-
-# #3. Inspect output ABLE --------------------------------------------------------
-# rule able_inspect:
+# # 2. Cachia -------------------------------------------------------------------
+# rule cachia:
 #     input:
-#         mat=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.subj.mat",
+#         mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+#         dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
+
+#     output:
+#         sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
+
+#     log:
+#         f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
+
+#     singularity:
+#         CONTAINERS["brainvisa"]
+
+#     shell:
+#         """
+#         mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
+
+#         BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
+#         /casa/install/bin/bv_env \
+#             python -m brainvisa.axon.runprocess \
+#             --enabledb \
+#             surface_sulci_dpf \
+#             {input.mesh} \
+#             {input.dpf} \
+#             {output.sulci} \
+#             -0.005 10 10 \
+#             2>&1 | tee {log}
+#         """
+
+
+# # 3. Mindboggle ---------------------------------------------------------------
+# include: "rules/mindboggle.smk"
+
+# # =============================================================================
+# # POST PROC
+# # =============================================================================
+
+# #1. VTIK -> GIFTII ------------------------------------------------------------
+# rule mindboggle_convert_gii:
+#     input:
+#         mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+#         curv_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk",
+#         depth_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk",
+#         depth_rescaled_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.vtk",
+#         folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.vtk",
+#         fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.vtk",
+
+#     output:
+#         curv_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.mean_curv.gii",
+#         depth_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.depth.gii",
+#         depth_rescaled_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.depth_rescaled.gii",
+#         folds_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.folds.gii",
+#         fundi_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.gii"
+
+#     conda: ENVIRONMENTS["slam"]
+    
+#     log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.convert_vtk_gii.log"
+
+#     script:
+#         "scripts/mindboggle_convert_scalar_gii.py"
+
+# #2. Trace -> GIFTII ------------------------------------------------------------
+# rule trace_convert_scalar_gii:
+#     input:
+#         sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve",
+#         sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.bary",
 #         white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii"
 
 #     output:
-#         desc_txt=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.inspect.txt",
-#         gyri_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.gyri.gii",
-#         sulci_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.sulci.gii",
-#         depth_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.depthmap.gii",
-#         basins_gii=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.sulcal_basins.gii",
-#         endpoints_npy=f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.endpoints.npy"
-
-#     log: f"{OUT}/{{test}}/{{sub}}/able/{{sub}}.{SIDE}.inspect.log"
-
+#         sulci_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve.gii",
+#         sulci_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_c.gii",
+#         sulci_bary_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary.gii",
+#         sulci_bary_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.gii",
+    
 #     conda: ENVIRONMENTS["slam"]
 
-#     script: "scripts/able_inspect_matlab.py"
+#     log:
+#         f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.convert_scurve.log"
+
+#     script:
+#         "scripts/trace_convert_scalar_gii.py"
+
 
 # =============================================================================
 # ÉVALUATION DES BASINS D'INTÉRÉTS
@@ -439,14 +398,16 @@ rule projected_labels:
         sphere_reg_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
         filtered_basins_npy=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{SIDE}.{SPHERETEMP}.{BASIN}.npy",
         basins_gii=f"{DATA_TEST}/{{test}}_{{sub}}_{SIDE}_{BASIN}.gii",
-        sulci_cachia=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii",
-        sulci_mindboggle=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.gii",
-        sulci_trace=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.gii"
+        sulci_zoe=f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.sulci.gii",
+        # sulci_cachia=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii",
+        # sulci_mindboggle=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.gii",
+        # sulci_trace=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.gii"
     
     output:
-        sulci_cachia_labeled=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
-        sulci_mindboggle_labeled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
-        sulci_trace_labeled=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii"
+        sulci_zoe_labeled=f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
+        # sulci_cachia_labeled=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
+        # sulci_mindboggle_labeled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
+        # sulci_trace_labeled=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii"
     
     conda: ENVIRONMENTS["slam"]
 
@@ -461,23 +422,26 @@ rule hausdorff_dist:
     input:
         match_tsv=f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.matching.tsv",
         sphere_reg_gii_test=f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
-        sulci_cachia_labeled_test=f"{OUT}/HCP_test/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
-        sulci_mindboggle_labeled_test=f"{OUT}/HCP_test/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
-        sulci_trace_labeled_test=f"{OUT}/HCP_test/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii",
+        # sulci_cachia_labeled_test=f"{OUT}/HCP_test/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
+        # sulci_mindboggle_labeled_test=f"{OUT}/HCP_test/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
+        # sulci_trace_labeled_test=f"{OUT}/HCP_test/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii",
+        sulci_zoe_labeled_test=f"{OUT}/HCP_test/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
 
         sphere_reg_gii_retest=f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{SIDE}.{SPHEREREG}.surf.gii",
-        sulci_cachia_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
-        sulci_mindboggle_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
-        sulci_trace_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii",
+        # sulci_cachia_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
+        # sulci_mindboggle_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/mindboggle/{{sub}}.{SIDE}.{WHITE}.fundi.labeled.gii",
+        # sulci_trace_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/trace/{{sub}}.{SIDE}.{WHITE}.scurve_bary_c.labeled.gii",
+        sulci_zoe_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/zoe/{{sub}}.{SIDE}.{WHITE}.sulci.labeled.gii",
 
     params:
         thr_basins=THR_BASINS,
         side=SIDE,
 
     output:
-        cachia_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
-        trace_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
-        mindboggle_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
+        # cachia_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
+        # trace_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
+        # mindboggle_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
+        zoe_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.zoe_dist.tsv"
         intermethod_results_tsv = f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.pairwise_dist.tsv"
 
     conda: ENVIRONMENTS["slam"]
@@ -492,16 +456,20 @@ rule hausdorff_dist:
 #4. aggrégation final ----------------------------------------------------------
 rule aggregate_results:
     input:
-        cachia_results_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
-            sub=SUBJECTS
-        ),
-        trace_results_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
-            sub=SUBJECTS
-        ),
-        mindboggle_results_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
+        # cachia_results_tsv = expand(
+        #     f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.cachia_dist.tsv",
+        #     sub=SUBJECTS
+        # ),
+        # trace_results_tsv = expand(
+        #     f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.trace_dist.tsv",
+        #     sub=SUBJECTS
+        # ),
+        # mindboggle_results_tsv = expand(
+        #     f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.mindboggle_dist.tsv",
+        #     sub=SUBJECTS
+        # ),
+        zoe_results_tsv = expand(
+            f"{OUT}/aggregated/{{sub}}/{{sub}}.{SIDE}.{SPHERETEMP}.zoe_dist.tsv",
             sub=SUBJECTS
         ),
         intermethod_results_tsv = expand(
@@ -566,20 +534,25 @@ rule proj:
         )
 
     output:
-        cachia_log_hausdorff=f"{OUT}/plots/cachia_log_hausdorff_proj.html",
-        cachia_hausdorff=f"{OUT}/plots/cachia_hausdorff_proj.html",
-        cachia_mean=f"{OUT}/plots/cachia_mean_proj.html",
-        cachia_p95=f"{OUT}/plots/cachia_p95_proj.html",
+        # cachia_log_hausdorff=f"{OUT}/plots/cachia_log_hausdorff_proj.html",
+        # cachia_hausdorff=f"{OUT}/plots/cachia_hausdorff_proj.html",
+        # cachia_mean=f"{OUT}/plots/cachia_mean_proj.html",
+        # cachia_p95=f"{OUT}/plots/cachia_p95_proj.html",
 
-        trace_log_hausdorff=f"{OUT}/plots/trace_log_hausdorff_proj.html",
-        trace_hausdorff=f"{OUT}/plots/trace_hausdorff_proj.html",
-        trace_mean=f"{OUT}/plots/trace_mean_proj.html",
-        trace_p95=f"{OUT}/plots/trace_p95_proj.html",
+        # trace_log_hausdorff=f"{OUT}/plots/trace_log_hausdorff_proj.html",
+        # trace_hausdorff=f"{OUT}/plots/trace_hausdorff_proj.html",
+        # trace_mean=f"{OUT}/plots/trace_mean_proj.html",
+        # trace_p95=f"{OUT}/plots/trace_p95_proj.html",
 
-        mindboggle_log_hausdorff=f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
-        mindboggle_hausdorff=f"{OUT}/plots/mindboggle_hausdorff_proj.html",
-        mindboggle_mean=f"{OUT}/plots/mindboggle_mean_proj.html",
-        mindboggle_p95=f"{OUT}/plots/mindboggle_p95_proj.html",
+        # mindboggle_log_hausdorff=f"{OUT}/plots/mindboggle_log_hausdorff_proj.html",
+        # mindboggle_hausdorff=f"{OUT}/plots/mindboggle_hausdorff_proj.html",
+        # mindboggle_mean=f"{OUT}/plots/mindboggle_mean_proj.html",
+        # mindboggle_p95=f"{OUT}/plots/mindboggle_p95_proj.html",
+
+        zoe_log_hausdorff=f"{OUT}/plots/zoe_log_hausdorff_proj.html",
+        zoe_hausdorff=f"{OUT}/plots/zoe_hausdorff_proj.html",
+        zoe_mean=f"{OUT}/plots/zoe_mean_proj.html",
+        zoe_p95=f"{OUT}/plots/zoe_p95_proj.html",
 
     conda:
         ENVIRONMENTS["slam"]

@@ -1,0 +1,18 @@
+
+name: slam2
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - brain-slam==0.1.1
+      - gdist
+      - pandas
+      - pyvista
+      - seaborn
+      - plotly
+      - potpourri3d

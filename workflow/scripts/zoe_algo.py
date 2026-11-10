@@ -6,6 +6,17 @@ import slam.io as sio
 import slam.texture as stex
 import slam.plot as splt
 import plotly.graph_objects as go
+from collections import Counter
+import potpourri3d as pp3d
+from scipy.spatial import cKDTree
+
+import pandas as pd
+import numpy as np
+
+# Métadonnées issues des wildcards
+test = snakemake.wildcards.test
+sub  = snakemake.wildcards.sub
+side = snakemake.wildcards.side   # hémisphère
 
 
 def same_cc(active, neigh):
@@ -461,23 +472,21 @@ def filter_skeleton_dijkstra(white_mesh, skeleton, dpfstar_reversed, indices_fol
     paths : list of list
         Plus courts chemins du pit vers les extrémités accessibles.
     """
+
     skeleton = np.asarray(skeleton, dtype=int)
     indices_fold = np.asarray(indices_fold, dtype=int)
     dpfstar_reversed = np.asarray(dpfstar_reversed, dtype=float)
 
-    # Identifier le pit sulcal
-    pit = int(indices_fold[np.argmax(dpfstar_reversed[indices_fold])])
+    # Garde : squelette vide ou d'un seul sommet -> pas de chemin possible
+    if skeleton.size <= 1:
+        print("⚠️ Squelette vide ou d'un seul sommet : fold ignoré.")
+        pit = int(skeleton[0]) if skeleton.size == 1 else None
+        return skeleton, None, None, pit, None
 
-    # Normaliser DPF* sur le sillon
+  
     vals = dpfstar_reversed[indices_fold]
-    vmin, vmax = vals.min(), vals.max()
-
-    if vmax > vmin:
-        dpf_norm = np.clip(
-            (dpfstar_reversed - vmin) / (vmax - vmin), 0, 1
-        )
-    else:
-        dpf_norm = np.zeros_like(dpfstar_reversed)
+    vmax = vals.max()
+    dpf_shifted = vmax - dpfstar_reversed + 1e-6
 
     # Extraire les arêtes dont les deux sommets appartiennent au squelette
     edges = white_mesh.edges_unique
@@ -491,8 +500,8 @@ def filter_skeleton_dijkstra(white_mesh, skeleton, dpfstar_reversed, indices_fol
     lengths = lengths[mask]
 
     # Pondérer les arêtes selon leur longueur et les valeurs de DPF*
-    dpf_cost = dpf_norm[skeleton_edges].mean(axis=1)
-    weights = lengths * (1.001 - dpf_cost)
+    dpf_cost = dpf_shifted[skeleton_edges].mean(axis=1)
+    weights = lengths * dpf_cost
 
     if np.any(weights <= 0):
         raise ValueError("Les poids des arêtes doivent être positifs.")
@@ -505,6 +514,14 @@ def filter_skeleton_dijkstra(white_mesh, skeleton, dpfstar_reversed, indices_fol
         for (a, b), w in zip(skeleton_edges, weights)
     )
 
+    # Identifier le pit sulcal : dans le bassin si possible, sinon dans le squelette
+    if indices_fold.size > 0:
+        pit = int(indices_fold[np.argmax(dpfstar_reversed[indices_fold])])
+    else:
+        pit = int(skeleton[np.argmax(dpfstar_reversed[skeleton])])
+        print("Bassin vide : pit pris sur le squelette.")
+
+    # Le pit doit être un sommet du graphe du squelette
     if pit not in graph:
         pit = int(skeleton[np.argmax(dpfstar_reversed[skeleton])])
         print("Le pit sulcal n'appartient pas au squelette.")
@@ -599,7 +616,8 @@ def segment_mesh(
     Returns
     -------
     segments : list of dict
-        Segments et leurs caractéristiques.
+        Segments et leurs caractéristiques, notamment leur nombre de
+        passages complets dans les chemins fournis.
     graph : networkx.Graph
         Graphe du squelette filtré.
     """
@@ -622,22 +640,27 @@ def segment_mesh(
 
     # Longueur géométrique de chaque arête
     vertices = np.asarray(white_mesh.vertices)
+
     edges_array = np.asarray(list(edges), dtype=int)
 
-    lengths = np.linalg.norm(
-        vertices[edges_array[:, 0]] - vertices[edges_array[:, 1]],
-        axis=1,
-    ) if len(edges_array) else np.array([], dtype=float)
+    if len(edges_array):
+        lengths = np.linalg.norm(
+            vertices[edges_array[:, 0]] - vertices[edges_array[:, 1]],
+            axis=1,
+        )
+    else:
+        lengths = np.array([], dtype=float)
 
     graph.add_edges_from(
-        (u, v, {"length": float(length)})
+        (int(u), int(v), {"length": float(length)})
         for (u, v), length in zip(edges_array, lengths)
     )
 
     # 2. Identifier les sommets délimitant les segments
     key_nodes = bifurcations | endpoints | {pit}
     key_nodes.update(
-        vertex for vertex, degree in graph.degree()
+        int(vertex)
+        for vertex, degree in graph.degree()
         if degree != 2
     )
 
@@ -666,15 +689,19 @@ def segment_mesh(
                     break
 
                 next_nodes = [
-                    v for v in graph.neighbors(current)
-                    if v != previous
+                    vertex
+                    for vertex in graph.neighbors(current)
+                    if vertex != previous
                 ]
 
                 if len(next_nodes) != 1:
                     break
 
                 next_vertex = next_nodes[0]
-                edge = (min(current, next_vertex), max(current, next_vertex))
+                edge = (
+                    min(current, next_vertex),
+                    max(current, next_vertex),
+                )
 
                 if edge in visited_edges:
                     break
@@ -682,17 +709,19 @@ def segment_mesh(
                 visited_edges.add(edge)
                 previous, current = current, next_vertex
 
-            segment_edges = {
+            segment_edges = frozenset(
                 (min(u, v), max(u, v))
                 for u, v in zip(
-                    segment_vertices[:-1], segment_vertices[1:]
+                    segment_vertices[:-1],
+                    segment_vertices[1:],
                 )
-            }
+            )
 
             segment_length = sum(
                 graph[u][v]["length"]
                 for u, v in zip(
-                    segment_vertices[:-1], segment_vertices[1:]
+                    segment_vertices[:-1],
+                    segment_vertices[1:],
                 )
             )
 
@@ -700,7 +729,7 @@ def segment_mesh(
                 "start": int(segment_vertices[0]),
                 "end": int(segment_vertices[-1]),
                 "vertices": segment_vertices,
-                "edges": frozenset(segment_edges),
+                "edges": segment_edges,
                 "length": float(segment_length),
                 "dpf_mean": float(
                     np.mean(dpfstar_reversed[segment_vertices])
@@ -708,79 +737,257 @@ def segment_mesh(
                 "passages": 0,
             })
 
+    # 4. Calculer le nombre de chemins traversant intégralement chaque segment
+    path_edge_sets = []
+
+    for path in paths:
+        path = np.asarray(path, dtype=int)
+
+        path_edges = frozenset(
+            (min(int(u), int(v)), max(int(u), int(v)))
+            for u, v in zip(path[:-1], path[1:])
+        )
+
+        path_edge_sets.append(path_edges)
+
+    for segment in segments:
+        segment_edges = segment["edges"]
+
+        segment["passages"] = sum(
+            segment_edges.issubset(path_edges)
+            for path_edges in path_edge_sets
+        )
+
     if not segments:
         print("Aucun segment à analyser.")
 
     return segments, graph
 
 
-def pruning(graph, segments, bifurcations, pit, seuil_seg=1):
-    """Élague les segments jusqu'au seuil sans créer de nouvelles composantes connexes."""
+def basin_stats(basin_id, skeleton, pruned_graph, pit_expected, dpfstar_reversed):
+    """
+    Calcule les stats du squelette d'un bassin (une ligne de DataFrame).
 
-    pruned_graph = graph.copy()
-    bifurcations = set(map(int, bifurcations))
-    pit = int(pit)
+    Parameters
+    ----------
+    basin_id : int
+        Label du bassin.
+    skeleton : array-like
+        Sommets du squelette issu de l'érosion (avant Dijkstra).
+    pruned_graph : networkx.Graph ou None
+        Graphe final (après Dijkstra + pruning). None dans le cas dégénéré.
+    pit_expected : int ou None
+        Sommet de DPF* maximal dans le fold.
+    dpfstar_reversed : ndarray
+        Texture DPF*.
+    """
+    skeleton = np.asarray(skeleton, dtype=int)
 
-    # Sommets de chaque segment
-    seg_vertices = [
-        set(map(int, segment["vertices"]))
-        for segment in segments
-    ]
-
-    # Nombre de segments contenant chaque sommet
-    vertex_count = {}
-    for vertices in seg_vertices:
-        for v in vertices:
-            vertex_count[v] = vertex_count.get(v, 0) + 1
-
-    initial_cc = nx.number_connected_components(pruned_graph)
-
-    # Tester les segments par niveau de passage croissant
-    order = sorted(
-        range(len(segments)),
-        key=lambda i: segments[i]["passages"],
+    # Le pit (max DPF* du fold) est-il dans le squelette ?
+    pit_true = (
+        pit_expected is not None and int(pit_expected) in set(skeleton.tolist())
     )
 
-    for idx in order:
-        segment = segments[idx]
-
-        if segment["passages"] > seuil_seg:
-            continue
-
-        vertices = seg_vertices[idx]
-
-        # Conserver le pit et les sommets partagés
-        removable = {
-            v for v in vertices
-            if v != pit
-            and vertex_count[v] == 1
-            and v in pruned_graph
+    # Cas dégénéré : squelette vide ou d'un seul sommet
+    if pruned_graph is None:
+        return {
+            "test": test, "sub": sub, "hemisphere": side,
+            "basin": int(basin_id),
+            "n_vertices": int(skeleton.size),
+            "length": 0.0,
+            "n_endpoints": 0,
+            "n_bifurcations": 0,
+            "n_segments": 0,
+            "n_pit_true": int(pit_true),
+            "n_pit_false": int(not pit_true),
         }
 
-        if not removable:
-            continue
+    degree = dict(pruned_graph.degree())
 
-        # Tester la suppression
-        candidate = pruned_graph.copy()
-        candidate.remove_nodes_from(removable)
+    n_endpoints = sum(d == 1 for d in degree.values())
+    n_bifurcations = sum(d >= 3 for d in degree.values())
 
-        if (
-            candidate.number_of_nodes() == 0
-            or nx.number_connected_components(candidate) <= initial_cc
-        ):
-            pruned_graph = candidate
+    # Segments = arêtes du graphe contracté entre nœuds clés
+    # (extrémités, bifurcations, pit) ; dans un arbre : somme des degrés / 2
+    key_nodes = {v for v, d in degree.items() if d != 2}
+    if pit_expected is not None and int(pit_expected) in pruned_graph:
+        key_nodes.add(int(pit_expected))
+    n_segments = sum(degree[v] for v in key_nodes) // 2
 
-        # Le segment a été testé : ses sommets ne sont plus considérés
-        # comme partagés avec un segment non encore testé.
-        for v in vertices:
-            vertex_count[v] -= 1
+    # Longueur totale du squelette élagué (mm)
+    length = pruned_graph.size(weight="length")
 
+    return {
+        "test": test,
+        "sub": sub,
+        "hemisphere": side,
+        "basin": int(basin_id),
+        "n_vertices": pruned_graph.number_of_nodes(),
+        "length": float(length),
+        "n_endpoints": int(n_endpoints),
+        "n_bifurcations": int(n_bifurcations),
+        "n_segments": int(n_segments),
+        "n_pit_true": int(pit_true),        # le pit max(DPF*) est dans le squelette
+        "n_pit_false": int(not pit_true),   # le point le plus profond du squelette n'est pas le pit
+    }
+
+
+def pruning(
+    graph, bifurcations, paths, endpoints, white_mesh, pit,
+    min_dist=0, min_length=0,
+):
+    """Remove short terminal branches in two stages."""
+
+    dist = min_dist * np.cbrt(white_mesh.volume)
+    length_b = min_length * np.cbrt(white_mesh.volume)
+
+    vertices = np.asarray(white_mesh.vertices)
+    endpoints = list(endpoints)
+    bifurcations = set(bifurcations)
+    paths = dict(zip(endpoints, paths))
+    pruned_graph = graph.copy()
+    alive = set(endpoints)
+
+    # Cache edge lengths.
+    edge_lengths = {}
+
+    def edge_length(u, v):
+        key = (min(u, v), max(u, v))
+        if key not in edge_lengths:
+            edge_lengths[key] = np.linalg.norm(vertices[u] - vertices[v])
+        return edge_lengths[key]
+
+    def branch_length(branch):
+        return sum(edge_length(u, v) for u, v in zip(branch, branch[1:]))
+
+    def terminal_branch(endpoint):
+        if endpoint not in pruned_graph or pruned_graph.degree(endpoint) != 1:
+            return [], None
+
+        branch, previous, current = [], None, endpoint
+
+        while pruned_graph.degree(current) < 3:
+            branch.append(current)
+            neighbors = [
+                n for n in pruned_graph.neighbors(current) if n != previous
+            ]
+            if len(neighbors) != 1:
+                return [], None
+            previous, current = current, neighbors[0]
+
+        return branch, current
+
+    def remove_branch(endpoint, branch, stage, bif, length):
+        print(
+            f"[Pruning {stage}] Endpoint: {endpoint} | "
+            f"Bifurcation: {bif} | Longueur supprimée: {length:.2f} mm"
+        )
+        pruned_graph.remove_nodes_from(branch)
+        alive.discard(endpoint)
+
+    # Stage 1: compare nearby endpoints sharing a bifurcation.
+    path_bifs = {
+        e: set(paths[e]) & bifurcations for e in endpoints
+    }
+    endpoint_array = np.asarray(endpoints, dtype=int)
+
+    pairs = (
+        cKDTree(vertices[endpoint_array]).query_pairs(
+            dist, output_type="ndarray"
+        )
+        if len(endpoints) > 1
+        else np.empty((0, 2), dtype=int)
+    )
+    pairs = np.asarray(pairs, dtype=int).reshape(-1, 2)
+
+    if len(pairs):
+        solver = pp3d.MeshHeatMethodDistanceSolver(
+            vertices, white_mesh.faces
+        )
+        by_source = {}
+        for i, j in pairs:
+            by_source.setdefault(i, []).append(j)
+
+        close_pairs = []
+        for i, js in by_source.items():
+            distances = solver.compute_distance(int(endpoint_array[i]))
+            close_pairs.extend(
+                (distances[endpoint_array[j]], i, j)
+                for j in js
+                if distances[endpoint_array[j]] < dist
+            )
+        close_pairs.sort(key=lambda x: x[0])
+
+        for _, i, j in close_pairs:
+            a, b = endpoints[i], endpoints[j]
+            if a not in alive or b not in alive:
+                continue
+
+            common = path_bifs[a] & path_bifs[b]
+            if not common:
+                continue
+
+            bif = next((n for n in reversed(paths[a]) if n in common), None)
+            if bif is None:
+                continue
+
+            branch_a, bif_a = terminal_branch(a)
+            branch_b, bif_b = terminal_branch(b)
+            if not branch_a or not branch_b or bif_a != bif_b:
+                continue
+
+            len_a, len_b = branch_length(branch_a), branch_length(branch_b)
+            endpoint, branch, length = (
+                (a, branch_a, len_a)
+                if len_a <= len_b
+                else (b, branch_b, len_b)
+            )
+            remove_branch(endpoint, branch, 1, bif, length)
+
+    # Stage 2: iteratively remove all short terminal branches.
+    removed = 0
+    while True:
+        candidates = []
+        for endpoint, degree in pruned_graph.degree():
+            if degree != 1 or endpoint == pit:
+                continue
+            branch, bif = terminal_branch(endpoint)
+            if branch and bif is not None:
+                length = branch_length(branch)
+                if length <= length_b:
+                    candidates.append(endpoint)
+
+        if not candidates:
+            break
+
+        changed = False
+        for endpoint in candidates:
+            if endpoint == pit:
+                continue
+            branch, bif = terminal_branch(endpoint)
+            if not branch or bif is None:
+                continue
+
+            length = branch_length(branch)
+            if length <= length_b:
+                remove_branch(endpoint, branch, 2, bif, length)
+                removed += 1
+                changed = True
+
+        if not changed:
+            break
+
+    print(
+        f"Deuxième pruning terminé : {removed} branches supprimées "
+        f"(seuil <= {length_b} mm)."
+    )
     return pruned_graph
 
 
 if __name__ == "__main__":
 
-    seuil_seg = getattr(snakemake.params, "seuil", 0)
+    seuil_dist = getattr(snakemake.params, "seuil_dist", 0)
+    seuil_len = getattr(snakemake.params, "seuil_len", 0)
 
     #paths
     white_path = snakemake.input.white_gii
@@ -816,11 +1023,11 @@ if __name__ == "__main__":
 
     #voisnage
     neigh = white_mesh.vertex_neighbors
+    stats_rows = []
 
     # ------------------------------------------------------------------
     # ALGORITHME PRINCIPAL
     # ------------------------------------------------------------------
-
     for label in labels_basins:
         indices_fold = vertices_dic[label]
         print("\n" + "=" * 50)
@@ -887,6 +1094,15 @@ if __name__ == "__main__":
             )
             new_borders = extract_borders(new_indices_fold, neigh)
         
+        # Bassin entièrement érodé par prune_frozen_borders : on l'ignore
+        if len(new_indices_fold) == 0:
+            print(f"⚠️ Bassin {label} vide après suppression des sommets gelés : ignoré.")
+            stats_rows.append(
+                basin_stats(label, np.array([], dtype=int), None, None, dpfstar_reversed)
+            )
+            print(f"FIN BASIN: {label} (bassin vide)")
+            continue
+
         all_borders[new_borders] = True
 
         # SQUELETTE
@@ -902,12 +1118,24 @@ if __name__ == "__main__":
         print("\n" + "-" * 50)
         print("ALGO PRINCIPAL : dijkstra")
         print("-" * 50)
+        pit_expected = int(new_indices_fold[np.argmax(dpfstar_reversed[new_indices_fold])])
         filtered_skeleton, endpoints, bifurcations, pit, paths = filter_skeleton_dijkstra(
             white_mesh,
             skeleton,
             dpfstar_reversed,
             new_indices_fold,
         )
+        if endpoints is None:
+            # Cas dégénéré : pas de probability_map ni de pruning.
+            # all_basins et all_borders sont déjà renseignés plus haut dans la boucle.
+            all_skeletons[skeleton] = True      # 0 ou 1 sommet
+            if pit is not None:
+                all_pits.append(int(pit))       # all_paths[pit] = 100 à la fin
+            print(f"FIN BASIN: {label} (cas dégénéré)")
+            stats_rows.append(
+                basin_stats(label, skeleton, None, pit_expected, dpfstar_reversed)
+            )
+            continue
 
         probability_map = probability_paths(white_mesh, paths)
 
@@ -927,12 +1155,19 @@ if __name__ == "__main__":
         print("\n" + "-" * 50)
         print("PRUNING : filtrage")
         print("-" * 50)
-        pruned_graph = pruning(graph, segments, bifurcations, pit, seuil_seg=seuil_seg)
+        pruned_graph = graph
+
+        if seuil_dist !=0 or seuil_len!= 0:
+            pruned_graph = pruning(graph, bifurcations, paths, endpoints, white_mesh, pit, min_dist=seuil_dist, min_length=seuil_len)
 
         print("\n" + "-" * 50)
         print(f"FIN BASIN: {label}")
         print("-" * 50)
         all_skeletons[list(pruned_graph.nodes)] = True
+
+        stats_rows.append(
+            basin_stats(label, skeleton, pruned_graph, pit_expected, dpfstar_reversed)
+        )
 
         # Accumulation des résultats de ce basin (les basins sont disjoints)
         mask = probability_map > 0
@@ -940,7 +1175,7 @@ if __name__ == "__main__":
         all_pits.append(int(pit))
         all_bifurcations.extend(int(v) for v in bifurcations)
         all_endpoints.extend(int(v) for v in endpoints)
-    
+            
 
     print("\n" + "-" * 50)
     print(f"FIN: Sauvegarde des textures")
@@ -959,6 +1194,9 @@ if __name__ == "__main__":
     sio.write_texture(stex.TextureND(darray=all_borders), snakemake.output.borders)
     sio.write_texture(stex.TextureND(darray=all_basins), snakemake.output.basins)
     sio.write_texture(stex.TextureND(darray=all_paths), snakemake.output.proba)
+
+    df_stats = pd.DataFrame(stats_rows)
+    df_stats.to_csv(snakemake.output.stats, sep="\t", index=False)
 
     # ------------------------------------------------------------------
     # Figure : tous les basins

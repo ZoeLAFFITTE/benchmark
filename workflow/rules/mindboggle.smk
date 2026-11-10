@@ -1,13 +1,16 @@
 ## 1. Mean curvature ----------------------------------------------------------
 rule mindboggle_compute_mean_curvature:
     input:
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
+        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk"
     output:
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk"
+        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk"
     singularity:
         CONTAINERS["mindboggle"]
     
-    log:f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.log"
+    log:f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.log"
+
+    benchmark:
+        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m1.benchmark.txt"
 
     shell:
         """
@@ -23,15 +26,18 @@ rule mindboggle_compute_mean_curvature:
 ## 2. Travel depth ------------------------------------------------------------
 rule mindboggle_compute_travel_depth:
     input:
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{PIAL}.vtk"
+        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk"
 
     output:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk"
+        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
 
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.log"
+
+    benchmark:
+        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m2.benchmark.txt"
 
     shell:
         """
@@ -44,19 +50,22 @@ rule mindboggle_compute_travel_depth:
 ## 3. Rescal depth ------------------------------------------------------------
 rule mindboggle_compute_rescale_depth:
     input:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk"
+        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
 
     output:
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.vtk"
+        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
     
     params:
         output_prefix=lambda wc:
-            f"{OUT}/{wc.test}/{wc.sub}/mindboggle/{wc.sub}.{SIDE}.depth_rescaled"
+            f"{OUT}/{wc.test}/{wc.sub}/mindboggle/{wc.sub}.{wc.side}.depth_rescaled"
 
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.log"
+
+    benchmark:
+        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m3.benchmark.txt"
 
     shell:
         """
@@ -70,16 +79,19 @@ rule mindboggle_compute_rescale_depth:
 ## 4. Depth depth threshold ---------------------------------------------------
 rule mindboggle_compute_depth_threshold:
     input:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.vtk"
+        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
     
     output:
-        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.vtk",
-        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.npy"
+        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
+        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.npy"
     
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.log"
+
+    benchmark:
+        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m4.benchmark.txt"
     
     shell:
         """
@@ -94,17 +106,20 @@ rule mindboggle_compute_depth_threshold:
 ## 5. Extract fundus ----------------------------------------------------------
 rule mindboggle_compute_fundi:
     input:
-        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.npy",
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.vtk",
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.vtk"
+        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.npy",
+        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
+        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
     
     output:
-        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.vtk",
+        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.vtk",
     
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.log"
+
+    benchmark:
+        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m5.benchmark.txt"
     
     shell:
         """
@@ -120,14 +135,14 @@ rule mindboggle_compute_fundi:
 
 rule mindboggle_aggregate_log:
     input:
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mean_curv.log",
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth.log",
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.depth_rescaled.log",
-        folds=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.folds.log",
-        fundi=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.fundi.log"
+        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.log",
+        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.log",
+        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.log",
+        folds=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.log",
+        fundi=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.log"
 
     output:
-        log=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{SIDE}.mindboggle.log"
+        log=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle.log"
 
     shell:
         """

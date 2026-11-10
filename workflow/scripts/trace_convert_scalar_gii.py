@@ -49,28 +49,34 @@ sio.write_texture(
 geodesic_bary_texture = np.zeros(n_vertices, dtype=np.int8)
 geodesic_bary_label_texture = np.zeros(n_vertices, dtype=np.int32)
 
-sulcus_id = 1
+branches = []      # liste de listes de sommets (ordre conservé)
+current = None
 
 with open(scurve_bary_file_path, "r") as file:
-    next(file)  # Skip header
+    next(file)  # nombre total de branches
 
     for line in file:
         values = line.split()
-
-        # A single value indicates the beginning of a new sulcus
-        if len(values) == 1:
-            sulcus_id += 1
+        if not values:
             continue
 
-        v1, v2 = map(int, values[:2])
+        if len(values) == 1:          # début d'une nouvelle branche
+            current = []
+            branches.append(current)
+            continue
 
-        # Binary texture
-        geodesic_bary_texture[v1] = 1
-        geodesic_bary_texture[v2] = 1
+        v1, v2, coef = int(values[0]), int(values[1]), float(values[2])
+        current.append(v1 if coef > 0.5 else v2)   # sommet le plus proche
 
-        # Sulcus label texture
-        geodesic_bary_label_texture[v1] = sulcus_id
-        geodesic_bary_label_texture[v2] = sulcus_id
+for sulcus_id, verts in enumerate(branches, start=1):
+    verts = np.array(verts, dtype=int)
+
+    # np.unique trie : on garde plutôt l'ordre d'apparition
+    _, idx = np.unique(verts, return_index=True)
+    verts = verts[np.sort(idx)]
+
+    geodesic_bary_texture[verts] = 1
+    geodesic_bary_label_texture[verts] = sulcus_id
 
 
 # Write binary barycentric sulci texture

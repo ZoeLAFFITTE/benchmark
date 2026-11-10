@@ -1,6 +1,6 @@
-#snakemake --cores 10 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work"
+#snakemake --cores 100 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work"
 #snakemake --cores 10 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work" --forceall
-#snakemake --cores 10 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work" --rerun-incomplete
+#snakemake --cores 100 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work" --rerun-incomplete
 #pkill -f snakemake
 
 configfile: "../config/config.yaml"
@@ -33,6 +33,15 @@ SPHEREREG = MESH["sphere.reg"]
 SPHERETEMP = MESH["sphere.template"]
 WHITETEMP = MESH["white.template"]
 
+METHODS_TO_AGGREGATE = [
+    "zoe", 
+    "mindboggle", 
+    "trace", 
+    # "zoe_adapt_dist", 
+    # "zoe_adapt_len", 
+    #"zoe_adapt_both"
+]
+
 
 # TESTS, SUBJECTS = glob_wildcards(f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}")
 # SUBJECTS = sorted(set(SUBJECTS))
@@ -40,65 +49,123 @@ WHITETEMP = MESH["white.template"]
 TESTS, SUBJECTS, SIDE = glob_wildcards(
     f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_basins_100.0_0.005_0.0.gii"
 )
-#SUBJECTS = sorted(set(SUBJECTS))
+TESTS    = sorted(set(TESTS))
+SUBJECTS = sorted(set(SUBJECTS))
+SIDE     = sorted(set(SIDE))
 
-# Temporary restriction for development/testing.
-TESTS = sorted(set(TESTS))[:2]
-SUBJECTS = sorted(set(SUBJECTS))[:10]
-SIDE = sorted(set(SIDE))[:2]
+# # Temporary restriction for development/testing.
+# TESTS = sorted(set(TESTS))[:2]
+# SUBJECTS = sorted(set(SUBJECTS))[:15]
+# SIDE = sorted(set(SIDE))[:2]
 
 wildcard_constraints:
-    seuil = r"\d+",
+    seuil = r"\d+\.\d+",
+    sdist = r"\d+\.\d+",
+    slen  = r"\d+\.\d+",
     test="HCP_test|HCP_retest",
     side="|".join(SIDE),
     sub=r"[^/_.]+",
 
-OUT = "zoe_algo"
+OUT = "benchmark_final"
 THR_BASINS = config["thr_basins"]
-SEUILS = list(range(0, 26))  # 0 à 25 inclus
 
+SEUILS_DIST = [f"{i * 0.05:.2f}" for i in range(7)]
+SEUILS_LEN  = [f"{i * 0.05:.2f}" for i in range(7)]
 
 # -----------------------------------------------------------------------------
 # Final targets
 # -----------------------------------------------------------------------------
 rule all:
     input:
-        f"{OUT}/plots/zoe/adapt/evol_hausdorff.html", 
-        f"{OUT}/aggregated/zoe/adapt/all_dist.tsv",
+        f"{OUT}/aggregated/zoe_stats_complex.tsv",
+        expand(
+            f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.stats.tsv",
+            test=TESTS, sub=SUBJECTS, side=SIDE,
+        ),
         f"{OUT}/aggregated/all_dist.tsv",
         f"{OUT}/plots/hist_all_hausdorff.html",
         f"{OUT}/plots/hist_all_mean.html",
         f"{OUT}/plots/hist_all_overlaps.html",
+        # 2. Zoe avec variation de seuil de distance
+        f"{OUT}/aggregated/methods/trace_mindboggle_zoe_all_reproducibility.tsv",
+        f"{OUT}/aggregated/methods/trace_mindboggle_zoe_all_reproducibility_alpha.tsv",
+        expand(
+            f"{OUT}/aggregated/methods/{{method}}_all_reproducibility.tsv",
+            method=METHODS_TO_AGGREGATE
+        ),
+        expand(
+            f"{OUT}/aggregated/methods/{{method}}_all_reproducibility_alpha.tsv",
+            method=METHODS_TO_AGGREGATE
+        ),
+        # # 4. Zoe avec variation combinée (dist + len)
+        # # expand(
+        # #     f"{OUT}/aggregated/{{sub}}/zoe_adapt_both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.reproducibility.tsv",
+        # #     sub=SUBJECTS,
+        # #     side=SIDE,
+        # #     sdist=SEUILS_DIST,
+        # #     slen=SEUILS_LEN,
+        # # ),
+        expand(
+            f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{{side}}.{WHITE}.{BASIN}.overlap.gii",
+            sub=SUBJECTS, side=SIDE,
+        ),
+        expand(
+            f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{{side}}.{WHITE}.{BASIN}.overlap.gii",
+            sub=SUBJECTS, side=SIDE,
+        ),
+        expand(
+            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.proj_overlap_test.html",
+            sub=SUBJECTS, side=SIDE,
+        ),
+        expand(
+            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.proj_overlap_retest.html",
+            sub=SUBJECTS, side=SIDE,
+        ),
+        expand(
+            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.hist_overlaps.html",
+            sub=SUBJECTS, side=SIDE,
+        ),
+        expand(
+            f"{OUT}/plots/{{test}}/{{sub}}/{{sub}}.both_hemi.sulci.html",
+            test=TESTS, sub=SUBJECTS,
+        ),
         # expand(
         #     f"{OUT}/plots/zoe_{{metric}}_proj.{{side}}.html",
         #     metric=["log_hausdorff", "hausdorff", "mean", "p95"],
         #     side=SIDE,
         # ),
-        expand(
-            f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{{side}}.{WHITE}.{BASIN}.overlap.gii",
-            sub=SUBJECTS,
-            side=SIDE,
-        ),
-        expand(
-            f"{OUT}/HCP_retest/{{sub}}/postproc/{{sub}}.{{side}}.{WHITE}.{BASIN}.overlap.gii",
-            sub=SUBJECTS,
-            side=SIDE,
-        ),
-        expand(
-            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.proj_overlap_test.html",
-            sub=SUBJECTS,
-            side=SIDE,
-        ),
-        expand(
-            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.proj_overlap_retest.html",
-            sub=SUBJECTS,
-            side=SIDE,
-        ),
-        expand(
-            f"{OUT}/plots/{{sub}}/{{sub}}.{{side}}.hist_overlaps.html",
-            sub=SUBJECTS,
-            side=SIDE,
-        )
+        # Visualisations individuelles : pruning dist
+        # expand(
+        #     f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/dist/{{seuil}}.html",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        #     side=SIDE,
+        #     seuil=SEUILS_DIST,
+        # ),
+
+        # # Visualisations individuelles : pruning len
+        # expand(
+        #     f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/len/{{seuil}}.html",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        #     side=SIDE,
+        #     seuil=SEUILS_LEN,
+        # ),
+
+        # # Visualisations individuelles : pruning dist + len
+        # expand(
+        #     f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/both/"
+        #     "d{sdist}_l{slen}.html",
+        #     test=TESTS,
+        #     sub=SUBJECTS,
+        #     side=SIDE,
+        #     sdist=SEUILS_DIST,
+        #     slen=SEUILS_LEN,
+        # ),
+        # f"{OUT}/aggregated/zoe/adapt/dist/all_dist.tsv",
+        # f"{OUT}/aggregated/zoe/adapt/len/all_dist.tsv",
+        # f"{OUT}/aggregated/zoe/adapt/both/all_dist.tsv",
+        # f"{OUT}/plots/zoe/adapt/evol_mean_nn_seuils.html",
 
 
 # =============================================================================
@@ -193,128 +260,137 @@ rule aggregate_preproc_log:
         rm {input.gii_vtk} {input.gii_tk} {input.texture}
         """
 
-# =============================================================================
-# FUNDI EXTRACTION
-# =============================================================================
-# 0. Zoé_algo -----------------------------------------------------------------
-rule zoe:
-    input:
-        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
-        basins_gii =f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
-
-    output:
-        skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.sulci.gii",
-        borders = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.folds.gii",
-        basins = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.gyri.gii",
-        proba = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.paths.gii",
-        fig = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.plot.html",
-
-    conda: ENVIRONMENTS["slam"]
-    
-    log: f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.zoe.log"
-
-    script:
-        "scripts/zoe_algo.py"
-
-# 1. Trace --------------------------------------------------------------------
-rule trace:
-    input:
-        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.vtk"
-    output:
-        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve",
-        sulci_cart=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.cart",
-        sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary"
-    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.trace.log"
-    params:
-        output_prefix=lambda wc: f"{OUT}/{wc.test}/{wc.sub}/trace/{wc.sub}.{wc.side}.{WHITE}"
-    singularity: CONTAINERS["trace"]
-    threads: 5
-    shell:
-        """
-        time CurveExtraction \
-            --inputSurface {input.white_vtk} \
-            --outputCurve {params.output_prefix} \
-            --nThreads {threads} \
-            --sulcus --cart --bary --noVtk \
-            2>&1 | tee {log}
-        """
-
-
-# # 2. Cachia -------------------------------------------------------------------
-# rule cachia:
+# # =============================================================================
+# # FUNDI EXTRACTION
+# # =============================================================================
+# # 0. Zoé_algo -----------------------------------------------------------------
+# rule zoe:
 #     input:
-#         mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
-#         dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
+#         white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+#         basins_gii =f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
 
 #     output:
-#         sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
+#         skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         borders = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.folds.gii",
+#         basins = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.gyri.gii",
+#         proba = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.paths.gii",
+#         fig = f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.plot.html",
+#         stats=f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.stats.tsv",
 
-#     log:
-#         f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
+#     params:
+#         seuil_dist=0.125,
+#         seuil_len=0.05,
 
-#     singularity:
-#         CONTAINERS["brainvisa"]
+#     conda: ENVIRONMENTS["slam"]
+    
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.zoe.log"
 
+#     benchmark:
+#         f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.zoe.benchmark.txt"
+#     script:
+#         "scripts/zoe_algo.py"
+
+# #1. Trace --------------------------------------------------------------------
+# rule trace:
+#     input:
+#         white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.vtk"
+#     output:
+#         sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve",
+#         sulci_cart=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.cart",
+#         sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary"
+#     log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.trace.log"
+#     params:
+#         output_prefix=lambda wc: f"{OUT}/{wc.test}/{wc.sub}/trace/{wc.sub}.{wc.side}.{WHITE}"
+#     singularity: CONTAINERS["trace"]
+#     benchmark:
+#         f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.trace.benchmark.txt"
+#     threads: 5
 #     shell:
 #         """
-#         mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
-
-#         BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
-#         /casa/install/bin/bv_env \
-#             python -m brainvisa.axon.runprocess \
-#             --enabledb \
-#             surface_sulci_dpf \
-#             {input.mesh} \
-#             {input.dpf} \
-#             {output.sulci} \
-#             -0.005 10 10 \
+#         time CurveExtraction \
+#             --inputSurface {input.white_vtk} \
+#             --outputCurve {params.output_prefix} \
+#             --nThreads {threads} \
+#             --sulcus --cart --bary --noVtk \
 #             2>&1 | tee {log}
 #         """
 
 
-# 3. Mindboggle ---------------------------------------------------------------
-include: "rules/mindboggle.smk"
+# # # #2. Cachia -------------------------------------------------------------------
+# # # rule cachia:
+# # #     input:
+# # #         mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{SIDE}.{WHITE}.surf.gii",
+# # #         dpf=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{SIDE}.{WHITE}.DPF_star.gii"
 
-# =============================================================================
-# POST PROC
-# =============================================================================
+# # #     output:
+# # #         sulci=f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.sulci.gii"
 
-#1. VTIK -> GIFTII ------------------------------------------------------------
-rule mindboggle_convert_gii:
-    input:
-        mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        curv_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
-        depth_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
-        depth_rescaled_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
-        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
-        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.vtk",
-    output:
-        curv_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.mean_curv.gii",
-        depth_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.depth.gii",
-        depth_rescaled_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.depth_rescaled.gii",
-        folds_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.folds.gii",
-        fundi_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.fundi.gii"
-    conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.convert_vtk_gii.log"
-    script:
-        "scripts/mindboggle_convert_scalar_gii.py"
+# # #     log:
+# # #         f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{SIDE}.{WHITE}.cachia.log"
 
-#2. Trace -> GIFTII ------------------------------------------------------------
-rule trace_convert_scalar_gii:
-    input:
-        sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve",
-        sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary",
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii"
-    output:
-        sulci_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.gii",
-        sulci_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_c.gii",
-        sulci_bary_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_bary.gii",
-        sulci_bary_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_bary_c.gii",
-    conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.convert_scurve.log"
-    script:
-        "scripts/trace_convert_scalar_gii.py"
+# # #     singularity:
+# # #         CONTAINERS["brainvisa"]
+
+# # #     shell:
+# # #         """
+# # #         mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
+
+# # #         BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
+# # #         /casa/install/bin/bv_env \
+# # #             python -m brainvisa.axon.runprocess \
+# # #             --enabledb \
+# # #             surface_sulci_dpf \
+# # #             {input.mesh} \
+# # #             {input.dpf} \
+# # #             {output.sulci} \
+# # #             -0.005 10 10 \
+# # #             2>&1 | tee {log}
+# # #         """
+
+
+##3. Mindboggle ---------------------------------------------------------------
+# # include: "rules/mindboggle.smk"
+
+# # =============================================================================
+# # POST PROC
+# # =============================================================================
+
+# # 1. VTIK -> GIFTII ------------------------------------------------------------
+# # rule mindboggle_convert_gii:
+# #     input:
+# #         mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+# #         curv_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
+# #         depth_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
+# #         depth_rescaled_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
+# #         folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
+# #         fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.vtk",
+# #     output:
+# #         curv_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.mean_curv.gii",
+# #         depth_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.depth.gii",
+# #         depth_rescaled_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.depth_rescaled.gii",
+# #         folds_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.folds.gii",
+# #         fundi_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.fundi.gii"
+# #     conda: ENVIRONMENTS["slam"]
+# #     log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.convert_vtk_gii.log"
+# #     script:
+# #         "scripts/mindboggle_convert_scalar_gii.py"
+
+# # 2. Trace -> GIFTII ------------------------------------------------------------
+# # rule trace_convert_scalar_gii:
+# #     input:
+# #         sulci_curv=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve",
+# #         sulci_curv_bary=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary",
+# #         white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii"
+# #     output:
+# #         sulci_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.gii",
+# #         sulci_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_c.gii",
+# #         sulci_bary_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_bary.gii",
+# #         sulci_bary_c_gii=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve_bary_c.gii",
+# #     conda: ENVIRONMENTS["slam"]
+# #     log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.convert_scurve.log"
+# #     script:
+# #         "scripts/trace_convert_scalar_gii.py"
 
 
 # =============================================================================
@@ -430,136 +506,510 @@ rule aggregate_results:
     script:
         "scripts/aggregate_results.py"
 
-#5. plots finaux ---------------------------------------------------------------
-rule plots:
+
+rule aggregate_zoe_stats:
     input:
-        all_methods_tsv = f"{OUT}/aggregated/all_dist.tsv",
-        match_tsv=expand(
-            f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
-            sub=SUBJECTS, side=SIDE,
-        ),
-
-    params:
-        thr_basins=THR_BASINS,
-        method="zoe",
-
-    output:
-        hist_hausdorff_plot=f"{OUT}/plots/hist_all_hausdorff.html",
-        hist_mean_plot=f"{OUT}/plots/hist_all_mean.html",
-        hist_overlaps=f"{OUT}/plots/hist_all_overlaps.html",
-
-    conda:
-        ENVIRONMENTS["slam"]
-
-    log:
-        f"{OUT}/aggregated/plot.log"
-
-    script:
-        "scripts/plot_results.py"
-
-#6. adapt zoe algo ------------------------------------------------------------
-rule adapt:
-    input:
-        white_gii     = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
-        basins_gii    = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
-    output:
-        skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
-        borders   = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.folds.gii",
-        basins    = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.gyri.gii",
-        proba     = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.paths.gii",
-        fig       = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.plot.html",
-    params:
-        seuil = lambda wc: int(wc.seuil),
-    conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.zoe-adapt.log"
-    script:
-        "scripts/zoe_algo.py"
-
-
-rule projected_labels2:
-    input:
-        sphere_reg_gii      = f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
-        filtered_basins_npy = f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.npy",
-        basins_gii          = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
-        sulci_zoe           = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",  # renommé
-    output:
-        sulci_zoe_labeled = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
-    params:
-        seuil = lambda wc: int(wc.seuil),
-    conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.projected_labels.log"  # sans /postproc/
-    script:
-        "scripts/compute_labels.py"
-
-
-rule hausdorff_dist2:
-    input:
-        match_tsv                = f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
-        sphere_reg_gii_test      = f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
-        sulci_zoe_labeled_test   = f"{OUT}/HCP_test/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
-        sphere_reg_gii_retest    = f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
-        sulci_zoe_labeled_retest = f"{OUT}/HCP_retest/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
-    output:
-        zoe_results_tsv = f"{OUT}/aggregated/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
-    params:
-        thr_basins = THR_BASINS,
-        seuil      = lambda wc: int(wc.seuil),
-    conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/aggregated/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.hausdorff.log"
-    script:
-        "scripts/compute_hausdorff.py"
-
-
-rule aggregate_results2:
-    input:
-        zoe_results_tsv = expand(
-            f"{OUT}/aggregated/{{sub}}/zoe/adapt/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
-            sub=SUBJECTS, side=SIDE, seuil=SEUILS,      # SEUIL -> SEUILS
+        expand(
+            f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.stats.tsv",
+            test=TESTS, sub=SUBJECTS, side=SIDE,
         ),
     output:
-        all_methods_tsv = f"{OUT}/aggregated/zoe/adapt/all_dist.tsv",
-    params:
-        seuils = SEUILS,                                # SEUIL -> SEUILS
+        f"{OUT}/aggregated/zoe_stats_complex.tsv",
     conda: ENVIRONMENTS["slam"]
-    log: f"{OUT}/aggregated/zoe/adapt/aggregated.log"
+    log: f"{OUT}/aggregated/zoe_stats_complex.log"
     script:
-        "scripts/aggregate_results.py"
-
-rule evol:
-    input:
-        all_methods_tsv = f"{OUT}/aggregated/zoe/adapt/all_dist.tsv",
-    output:
-        fig = f"{OUT}/plots/zoe/adapt/evol_hausdorff.html",
-    conda: ENVIRONMENTS["slam"]                         # ajouté
-    log: f"{OUT}/plots/zoe/adapt/evol_hausdorff.log",
-    script:
-        "scripts/evol.py"
+        "scripts/aggregate_zoe_stats.py"
 
 
-# rule proj:
+# #5. plots finaux ---------------------------------------------------------------
+# rule plots:
 #     input:
-#         all_methods_tsv=f"{OUT}/aggregated/all_dist.{{side}}.tsv",
-#         white_template_gii=f"{ATLAS}.{{side}}.{WHITETEMP}.surf.gii",
-#         basins_test_reg_gii=expand(
-#             f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.gii",
-#             sub=SUBJECTS,
-#             allow_missing=True,
+#         all_methods_tsv = f"{OUT}/aggregated/all_dist.tsv",
+#         match_tsv=expand(
+#             f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
+#             sub=SUBJECTS, side=SIDE,
 #         ),
 
+#     params:
+#         thr_basins=THR_BASINS,
+#         method="zoe",
+
 #     output:
-#         zoe_log_hausdorff=f"{OUT}/plots/zoe_log_hausdorff_proj.{{side}}.html",
-#         zoe_hausdorff=f"{OUT}/plots/zoe_hausdorff_proj.{{side}}.html",
-#         zoe_mean=f"{OUT}/plots/zoe_mean_proj.{{side}}.html",
-#         zoe_p95=f"{OUT}/plots/zoe_p95_proj.{{side}}.html",
-#         # cachia_log_hausdorff=...
-#         # (commentaires à la suite, sans ligne vide avant la première entrée)
+#         hist_hausdorff_plot=f"{OUT}/plots/hist_all_hausdorff.html",
+#         hist_mean_plot=f"{OUT}/plots/hist_all_mean.html",
+#         hist_overlaps=f"{OUT}/plots/hist_all_overlaps.html",
 
 #     conda:
 #         ENVIRONMENTS["slam"]
 
 #     log:
-#         f"{OUT}/aggregated/proj.{{side}}.log"
+#         f"{OUT}/aggregated/plot.log"
 
 #     script:
-#         "scripts/proj.py"
+#         "scripts/plot_results.py"
+
+
+rule plot_all_sulci:
+    input:
+        L_white_mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.L.{WHITE}.surf.gii",
+        R_white_mesh=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.R.{WHITE}.surf.gii",
+        L_trace_sulci=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.L.{WHITE}.scurve_bary_c.labeled.gii",
+        L_mindboggle_sulci=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.L.{WHITE}.fundi.labeled.gii",
+        L_zoe_sulci=f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.L.{WHITE}.sulci.labeled.gii",
+        L_dpf_star=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.L.{WHITE}.DPF_star.gii",
+        R_trace_sulci=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.R.{WHITE}.scurve_bary_c.labeled.gii",
+        R_mindboggle_sulci=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.R.{WHITE}.fundi.labeled.gii",
+        R_zoe_sulci=f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.R.{WHITE}.sulci.labeled.gii",
+        R_dpf_star=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.R.{WHITE}.DPF_star.gii",
+        L_filtered_basins=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.L.{SPHERETEMP}.{BASIN}.npy",
+        R_filtered_basins=f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.R.{SPHERETEMP}.{BASIN}.npy",
+
+    output:
+        fig=f"{OUT}/plots/{{test}}/{{sub}}/{{sub}}.both_hemi.sulci.html"
+
+    conda:
+        ENVIRONMENTS["slam"]
+
+    log:
+        f"{OUT}/plots/{{test}}/{{sub}}/{{sub}}.both_hemi.sulci.log"
+
+    script:
+        "scripts/all_proj.py"
+
+
+# # rule plot_segment_lengths:
+# #     input:
+# #         stats = expand(
+# #             f"{OUT}/{{test}}/{{sub}}/zoe/{{sub}}.{{side}}.{WHITE}.stats.csv",
+# #             test=TESTS, sub=SUBJECTS, side=SIDE,
+# #         ),
+# #     output:
+# #         fig     = f"{OUT}/summary/segment_lengths.html",
+# #         summary = f"{OUT}/summary/segment_lengths_stats.tsv",
+# #     conda: ENVIRONMENTS["slam"]
+# #     log: f"{OUT}/summary/segment_lengths.log"
+# #     script:
+# #         "scripts/passages.py"
+
+        
+# #6. adapt zoe algo ------------------------------------------------------------
+# rule adapt_dist:
+#     input:
+#         white_gii     = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+#         basins_gii    = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#     output:
+#         skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         borders   = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.folds.gii",
+#         basins    = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.gyri.gii",
+#         proba     = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.paths.gii",
+#         fig       = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.plot.html",
+#         stats=f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.stats.tsv",
+#     params:
+#         seuil_dist = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.zoe-adapt.log"
+#     script:
+#         "scripts/zoe_algo.py"
+
+
+# rule adapt_len:
+#     input:
+#         white_gii     = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+#         basins_gii    = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#     output:
+#         skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         borders   = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.folds.gii",
+#         basins    = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.gyri.gii",
+#         proba     = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.paths.gii",
+#         fig       = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.plot.html",
+#         stats = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.stats.tsv",
+#     params:
+#         seuil_len = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.zoe-adapt.log"
+#     script:
+#         "scripts/zoe_algo.py"
+
+
+# rule adapt_both:
+#     input:
+#         white_gii     = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+#         basins_gii    = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#     output:
+#         skeletons = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         borders   = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.folds.gii",
+#         basins    = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.gyri.gii",
+#         proba     = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.paths.gii",
+#         fig       = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.plot.html",
+#         stats = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.stats.tsv",
+#     params:
+#         seuil_dist = lambda wc: float(wc.sdist),
+#         seuil_len  = lambda wc: float(wc.slen),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.zoe-adapt.log"
+#     script:
+#         "scripts/zoe_algo.py"
+
+
+# rule projected_labels_dist:
+#     input:
+#         sphere_reg_gii      = f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         filtered_basins_npy = f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.npy",
+#         basins_gii          = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#         sulci_zoe           = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         sulci_zoe_labeled = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     params:
+#         seuil = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.projected_labels.log"
+#     script:
+#         "scripts/compute_labels.py"
+
+
+# rule projected_labels_len:
+#     input:
+#         sphere_reg_gii      = f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         filtered_basins_npy = f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.npy",
+#         basins_gii          = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#         sulci_zoe           = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         sulci_zoe_labeled = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     params:
+#         seuil = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.projected_labels.log"
+#     script:
+#         "scripts/compute_labels.py"
+
+
+# rule projected_labels_both:
+#     input:
+#         sphere_reg_gii      = f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         filtered_basins_npy = f"{OUT}/{{test}}/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.npy",
+#         basins_gii          = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+#         sulci_zoe           = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         sulci_zoe_labeled = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     params:
+#         seuil = lambda wc: f"d{wc.sdist}_l{wc.slen}",
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.projected_labels.log"
+#     script:
+#         "scripts/compute_labels.py"
+
+
+# rule hausdorff_dist:
+#     input:
+#         match_tsv                = f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
+#         sphere_reg_gii_test      = f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_test   = f"{OUT}/HCP_test/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#         sphere_reg_gii_retest    = f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_retest = f"{OUT}/HCP_retest/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     output:
+#         zoe_results_tsv = f"{OUT}/aggregated/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#     params:
+#         thr_basins = THR_BASINS,
+#         seuil      = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.hausdorff.log"
+#     script:
+#         "scripts/compute_hausdorff.py"
+
+
+# rule hausdorff_len:
+#     input:
+#         match_tsv                = f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
+#         sphere_reg_gii_test      = f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_test   = f"{OUT}/HCP_test/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#         sphere_reg_gii_retest    = f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_retest = f"{OUT}/HCP_retest/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     output:
+#         zoe_results_tsv = f"{OUT}/aggregated/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#     params:
+#         thr_basins = THR_BASINS,
+#         seuil      = lambda wc: float(wc.seuil),
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.hausdorff.log"
+#     script:
+#         "scripts/compute_hausdorff.py"
+
+
+# rule hausdorff_both:
+#     input:
+#         match_tsv                = f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
+#         sphere_reg_gii_test      = f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_test   = f"{OUT}/HCP_test/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#         sphere_reg_gii_retest    = f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+#         sulci_zoe_labeled_retest = f"{OUT}/HCP_retest/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci_labeled.gii",
+#     output:
+#         zoe_results_tsv = f"{OUT}/aggregated/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#     params:
+#         thr_basins = THR_BASINS,
+#         seuil      = lambda wc: f"d{wc.sdist}_l{wc.slen}",
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.hausdorff.log"
+#     script:
+#         "scripts/compute_hausdorff.py"
+
+
+# rule aggregate_results_dist:
+#     input:
+#         zoe_results_tsv = expand(
+#             f"{OUT}/aggregated/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#             sub=SUBJECTS, side=SIDE, seuil=SEUILS_DIST,
+#         ),
+#     output:
+#         all_methods_tsv = f"{OUT}/aggregated/zoe/adapt/dist/all_dist.tsv",
+#     params:
+#         seuils_dist = SEUILS_DIST,
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/zoe/adapt/dist/aggregated.log"
+#     script:
+#         "scripts/aggregate_results.py"
+
+
+# rule aggregate_results_len:
+#     input:
+#         zoe_results_tsv = expand(
+#             f"{OUT}/aggregated/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#             sub=SUBJECTS, side=SIDE, seuil=SEUILS_LEN,
+#         ),
+#     output:
+#         all_methods_tsv = f"{OUT}/aggregated/zoe/adapt/len/all_dist.tsv",
+#     params:
+#         seuils_len = SEUILS_LEN,
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/zoe/adapt/len/aggregated.log"
+#     script:
+#         "scripts/aggregate_results.py"
+
+
+# rule aggregate_results_both:
+#     input:
+#         zoe_results_tsv = expand(
+#             f"{OUT}/aggregated/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{SPHERETEMP}.zoe_dist.tsv",
+#             sub=SUBJECTS, side=SIDE, sdist=SEUILS_DIST, slen=SEUILS_LEN,
+#         ),
+#     output:
+#         all_methods_tsv = f"{OUT}/aggregated/zoe/adapt/both/all_dist.tsv",
+#     params:
+#         seuils_dist = SEUILS_DIST,
+#         seuils_len  = SEUILS_LEN,
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/aggregated/zoe/adapt/both/aggregated.log"
+#     script:
+#         "scripts/aggregate_results.py"
+
+
+# rule evol:
+#     input:
+#         both_tsv = f"{OUT}/aggregated/zoe/adapt/both/all_dist.tsv",
+#     output:
+#         fig = f"{OUT}/plots/zoe/adapt/evol_mean_nn_seuils.html",
+#     conda: ENVIRONMENTS["slam"]
+#     log: f"{OUT}/plots/zoe/adapt/evol_mean_nn_seuils.log"
+#     script:
+#         "scripts/evol.py"
+
+
+# rule plot_skeleton_dist:
+#     input:
+#         mesh = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         reference = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/0.00/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         pruned = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/dist/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         fig = (
+#             f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/"
+#             "dist/{seuil}.html"
+#         )
+#     params:
+#         method = "dist"
+#     conda: ENVIRONMENTS["slam"]
+#     script:
+#         "scripts/evol_proj.py"
+
+
+# rule plot_skeleton_len:
+#     input:
+#         mesh = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         reference = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/0.00/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         pruned = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/len/{{seuil}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         fig = (
+#             f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/"
+#             "len/{seuil}.html"
+#         )
+#     params:
+#         method = "len"
+#     conda: ENVIRONMENTS["slam"]
+#     script:
+#         "scripts/evol_proj.py"
+
+
+# rule plot_skeleton_both:
+#     input:
+#         mesh = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+#         reference = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d0.00_l0.00/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#         pruned = f"{OUT}/{{test}}/{{sub}}/zoe/adapt/both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.{WHITE}.sulci.gii",
+#     output:
+#         fig = (
+#             f"{OUT}/plots/individual/{{test}}/{{sub}}/{{side}}/"
+#             "both/d{sdist}_l{slen}.html"
+#         )
+#     params:
+#         method = "both"
+#     conda: ENVIRONMENTS["slam"]
+#     script:
+#         "scripts/evol_proj.py"
+
+
+def get_method_inputs(wc):
+    """Retourne un dictionnaire des chemins d'entrée nommés pour la règle."""
+    base_inputs = {
+        "match_tsv": f"{OUT}/aggregated/{wc.sub}/{wc.sub}.{wc.side}.matching.tsv",
+        "white_test": f"{DATA}/{RAW}/HCP_test/{wc.sub}/{NATIVE}/{wc.sub}.{wc.side}.{WHITE}.surf.gii",
+        "white_retest": f"{DATA}/{RAW}/HCP_retest/{wc.sub}/{NATIVE}/{wc.sub}.{wc.side}.{WHITE}.surf.gii",
+        "sphere_reg_test": f"{DATA}/{RAW}/HCP_test/{wc.sub}/{REG}/{wc.sub}.{wc.side}.{SPHEREREG}.surf.gii",
+        "sphere_reg_retest": f"{DATA}/{RAW}/HCP_retest/{wc.sub}/{REG}/{wc.sub}.{wc.side}.{SPHEREREG}.surf.gii",
+        "dpf_test": f"{OUT}/HCP_test/{wc.sub}/preproc/{wc.sub}.{wc.side}.{WHITE}.DPF_star.gii",
+        "dpf_retest": f"{OUT}/HCP_retest/{wc.sub}/preproc/{wc.sub}.{wc.side}.{WHITE}.DPF_star.gii",
+        "basins_test": f"{DATA_TEST}/HCP_test_{wc.sub}_{wc.side}_{BASIN}.gii",
+        "basins_retest": f"{DATA_TEST}/HCP_retest_{wc.sub}_{wc.side}_{BASIN}.gii",
+    }
+    
+    # Ajout dynamique des fichiers de squelettes labellisés selon la méthode / variante
+    if wc.method == "zoe":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/zoe/{wc.sub}.{wc.side}.{WHITE}.sulci.labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/zoe/{wc.sub}.{wc.side}.{WHITE}.sulci.labeled.gii"
+    elif wc.method == "mindboggle":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/mindboggle/{wc.sub}.{wc.side}.{WHITE}.fundi.labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/mindboggle/{wc.sub}.{wc.side}.{WHITE}.fundi.labeled.gii"
+    elif wc.method == "trace":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/trace/{wc.sub}.{wc.side}.{WHITE}.scurve_bary_c.labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/trace/{wc.sub}.{wc.side}.{WHITE}.scurve_bary_c.labeled.gii"
+    elif wc.method == "zoe_adapt_dist":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/zoe/adapt/dist/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/zoe/adapt/dist/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+    elif wc.method == "zoe_adapt_len":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/zoe/adapt/len/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/zoe/adapt/len/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+    elif wc.method == "zoe_adapt_both":
+        base_inputs["sulci_test"] = f"{OUT}/HCP_test/{wc.sub}/zoe/adapt/both/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+        base_inputs["sulci_retest"] = f"{OUT}/HCP_retest/{wc.sub}/zoe/adapt/both/{wc.params_path}/{wc.sub}.{wc.side}.{WHITE}.sulci_labeled.gii"
+    else:
+        raise ValueError(f"Méthode inconnue : {wc.method}")
+        
+    return base_inputs  # Surtout pas de crochets [] autour de base_inputs !
+
+rule compute_reproducibility_all_variants:
+    input:
+        unpack(get_method_inputs)   # <-- Ajout de unpack() ici
+    output:
+        tsv       = f"{OUT}/aggregated/{{sub}}/{{method}}/{{params_path}}/{{sub}}.{{side}}.reproducibility.tsv",
+        alpha_tsv = f"{OUT}/aggregated/{{sub}}/{{method}}/{{params_path}}/{{sub}}.{{side}}.reproducibility_alpha.tsv",
+    params:
+        thr_basins = THR_BASINS,
+        method     = lambda wc: wc.method,
+        param      = lambda wc: wc.params_path,
+    conda: ENVIRONMENTS["slam"]
+    log: 
+        f"{OUT}/aggregated/{{sub}}/{{method}}/{{params_path}}/{{sub}}.{{side}}.reproducibility.log"
+    script:
+        "scripts/repro_final.py"
+
+
+def get_aggregation_inputs(wc):
+    """Détermine tous les fichiers individuels à agréger pour une méthode donnée."""
+    method = wc.method
+    
+    if method in ["zoe", "mindboggle", "trace"]:
+        return expand(
+            f"{OUT}/aggregated/{{sub}}/{method}/default/{{sub}}.{{side}}.reproducibility.tsv",
+            sub=SUBJECTS,
+            side=SIDE
+        )
+    # elif method == "zoe_adapt_dist":
+    #     return expand(
+    #         f"{OUT}/aggregated/{{sub}}/zoe_adapt_dist/{{seuil}}/{{sub}}.{{side}}.reproducibility.tsv",
+    #         sub=SUBJECTS,
+    #         side=SIDE,
+    #         seuil=SEUILS_DIST
+    #     )
+    # elif method == "zoe_adapt_len":
+    #     return expand(
+    #         f"{OUT}/aggregated/{{sub}}/zoe_adapt_len/{{seuil}}/{{sub}}.{{side}}.reproducibility.tsv",
+    #         sub=SUBJECTS,
+    #         side=SIDE,
+    #         seuil=SEUILS_LEN
+    #     )
+    # elif method == "zoe_adapt_both":
+    #     return expand(
+    #         f"{OUT}/aggregated/{{sub}}/zoe_adapt_both/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.reproducibility.tsv",
+    #         sub=SUBJECTS,
+    #         side=SIDE,
+    #         sdist=SEUILS_DIST,
+    #         slen=SEUILS_LEN
+    #     )
+    else:
+        raise ValueError(f"Méthode d'agrégation inconnue : {method}")
+
+
+rule aggregate_method_reproducibility:
+    input:
+        tsv_list = get_aggregation_inputs
+    output:
+        tsv       = f"{OUT}/aggregated/methods/{{method}}_all_reproducibility.tsv",
+        alpha_tsv = f"{OUT}/aggregated/methods/{{method}}_all_reproducibility_alpha.tsv",
+    conda: ENVIRONMENTS["slam"]
+    log: 
+        f"{OUT}/aggregated/methods/{{method}}_aggregation.log"
+    script:
+        "scripts/aggregate_reproducibility.py"
+
+
+rule aggregate_standard_methods_together:
+    input:
+        tsv_list = expand(
+            f"{OUT}/aggregated/methods/{{method}}_all_reproducibility.tsv",
+            method=["trace", "mindboggle", "zoe"]
+        )
+    output:
+        tsv       = f"{OUT}/aggregated/methods/trace_mindboggle_zoe_all_reproducibility.tsv",
+        alpha_tsv = f"{OUT}/aggregated/methods/trace_mindboggle_zoe_all_reproducibility_alpha.tsv",
+    conda: ENVIRONMENTS["slam"]
+    log: 
+        f"{OUT}/aggregated/methods/trace_mindboggle_zoe_aggregation.log"
+    script:
+        "scripts/aggregate_all_methods.py"
+
+
+# # rule proj:
+# #     input:
+# #         all_methods_tsv=f"{OUT}/aggregated/all_dist.{{side}}.tsv",
+# #         white_template_gii=f"{ATLAS}.{{side}}.{WHITETEMP}.surf.gii",
+# #         basins_test_reg_gii=expand(
+# #             f"{OUT}/HCP_test/{{sub}}/postproc/{{sub}}.{{side}}.{SPHERETEMP}.{BASIN}.gii",
+# #             sub=SUBJECTS,
+# #             allow_missing=True,
+# #         ),
+
+# #     output:
+# #         zoe_log_hausdorff=f"{OUT}/plots/zoe_log_hausdorff_proj.{{side}}.html",
+# #         zoe_hausdorff=f"{OUT}/plots/zoe_hausdorff_proj.{{side}}.html",
+# #         zoe_mean=f"{OUT}/plots/zoe_mean_proj.{{side}}.html",
+# #         zoe_p95=f"{OUT}/plots/zoe_p95_proj.{{side}}.html",
+# #         # cachia_log_hausdorff=...
+# #         # (commentaires à la suite, sans ligne vide avant la première entrée)
+
+# #     conda:
+# #         ENVIRONMENTS["slam"]
+
+# #     log:
+# #         f"{OUT}/aggregated/proj.{{side}}.log"
+
+# #     script:
+# #         "scripts/proj.py"

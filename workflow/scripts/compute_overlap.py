@@ -11,6 +11,7 @@ import slam.texture as stex
 import slam.remeshing as srem
 import slam.plot as splt
 import plotly.express as px
+import sys
 
 
 def match_basins(test_basins, retest_basins):
@@ -135,6 +136,8 @@ def compute_proj(basins_overlap, white_mesh, title):
 # ------------------------------------------------------------------
 # Inputs
 # ------------------------------------------------------------------
+sys.stderr = sys.stdout = open(snakemake.log[0], "w")
+
 subject = snakemake.wildcards.sub
 basins_test_path = snakemake.input.basins_test_gii
 basins_retest_path = snakemake.input.basins_retest_gii

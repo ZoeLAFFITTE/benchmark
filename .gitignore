@@ -10,6 +10,7 @@ results*/
 data_test*/
 matlab*/
 software*/
+results_vrac*/
 
 # Snakemake
 .snakemake*/

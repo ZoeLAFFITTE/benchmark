@@ -11,10 +11,17 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import sys
 
 METRICS = {
     "hausdorff": "Hausdorff",
     "mean_nn": "Mean nearest-neighbor",
+}
+
+COLORS = {
+    "zoe": "red",
+    "trace": "green",
+    "mindboggle": "blue",
 }
 
 
@@ -138,6 +145,9 @@ def plot_metric(data, metric, title):
             if method_data.empty:
                 continue
 
+            # Récupération de la couleur associée à la méthode (en minuscules pour la correspondance)
+            method_color = COLORS.get(method.lower(), None)
+
             fig.add_trace(
                 go.Box(
                     x=method_data["subject"],
@@ -151,6 +161,7 @@ def plot_metric(data, metric, title):
                     boxmean="sd",
                     jitter=0.25,
                     pointpos=0,
+                    marker_color=method_color,
                     customdata=method_data[
                         ["subject", "side", "label_test", "label_retest", "distance"]
                     ],
@@ -203,6 +214,89 @@ def plot_metric(data, metric, title):
 
     return fig
 
+def plot_metric(data, metric, title):
+    """Boxplot par méthode (un point = un bassin d'un sujet), une facette par côté."""
+    subset = data.loc[data["metric"] == metric].copy()
+    subset["subject"] = subset["subject"].astype(str)
+    subset["label_test"] = subset["label_test"].astype(str)
+    subset["label_retest"] = subset["label_retest"].astype(str)
+
+    sides = sorted(subset["side"].dropna().unique())
+    methods = sorted(subset["method"].dropna().unique())
+
+    fig = make_subplots(
+        rows=1,
+        cols=len(sides),
+        subplot_titles=[f"Side: {side}" for side in sides],
+        shared_yaxes=True,
+    )
+
+    for col_idx, side in enumerate(sides, start=1):
+        side_subset = subset.loc[subset["side"] == side]
+
+        for method in methods:
+            method_data = side_subset.loc[side_subset["method"] == method]
+            if method_data.empty:
+                continue
+
+            method_color = COLORS.get(method.lower(), None)
+
+            fig.add_trace(
+                go.Box(
+                    y=method_data["distance"],
+                    name=method,               # une boîte par méthode (axe x)
+                    legendgroup=method,
+                    showlegend=(col_idx == 1),
+                    boxpoints="all",           # un point = un bassin
+                    boxmean="sd",
+                    jitter=0.4,
+                    pointpos=0,
+                    marker_color=method_color,
+                    marker={"size": 4, "opacity": 0.5},
+                    customdata=method_data[
+                        ["subject", "side", "label_test", "label_retest", "distance"]
+                    ],
+                    hovertemplate=(
+                        "<b>Subject:</b> %{customdata[0]}<br>"
+                        "<b>Side:</b> %{customdata[1]}<br>"
+                        "<b>Label test:</b> %{customdata[2]}<br>"
+                        "<b>Label retest:</b> %{customdata[3]}<br>"
+                        "<b>Distance:</b> %{customdata[4]:.3f}"
+                        "<extra>%{fullData.name}</extra>"
+                    ),
+                ),
+                row=1,
+                col=col_idx,
+            )
+
+        fig.update_xaxes(
+            title="Method",
+            type="category",
+            categoryorder="array",
+            categoryarray=methods,
+            row=1,
+            col=col_idx,
+        )
+
+    n_subjects = subset["subject"].nunique()
+    n_labels = len(subset)
+
+    fig.update_layout(
+        width=1000,
+        height=600,
+        margin={"l": 50, "r": 50, "t": 80, "b": 50},
+        title=(
+            f"{title} distance "
+            f"(n = {n_subjects} subjects, "
+            f"{n_labels} label measurements)"
+        ),
+        legend={"title": "Method"},
+    )
+
+    fig.update_yaxes(title="Distance", row=1, col=1)
+
+    return fig
+    
 
 def intermethod_metrics(data, metric, title):
     """Generate an interactive boxplot for one inter-method distance metric."""
@@ -295,7 +389,6 @@ def intermethod_metrics(data, metric, title):
 
     fig.update_yaxes(
         range=[0, max(data_pair["distance"])],
-        #dtick=5,
         title="Distance",
     )
 
@@ -313,28 +406,54 @@ def intermethod_metrics(data, metric, title):
 #------------------------------------------------------------------
 # Inputs & Parameters from Snakemake
 # ------------------------------------------------------------------
-#target_method = snakemake.params.get("method", "zoe").capitalize()
+sys.stderr = sys.stdout = open(snakemake.log[0], "w")
 
+thr_basins = float(snakemake.params.thr_basins)
+
+# ------------------------------------------------------------------
+# Overlaps : ne garder que les bassins reproductibles (>= THR)
+# ------------------------------------------------------------------
 df_overlaps = load_overlaps(snakemake.input.match_tsv)
+n_before = len(df_overlaps)
+df_overlaps = df_overlaps.loc[df_overlaps["overlap"] >= thr_basins].copy()
+print(f"Overlaps: {len(df_overlaps)}/{n_before} paires gardées (thr={thr_basins})")
+
+# ------------------------------------------------------------------
+# Distances : ne garder que les paires de bassins reproductibles
+# ------------------------------------------------------------------
 df_distances_raw = pd.read_csv(snakemake.input.all_methods_tsv, sep="\t")
 
-# Filtrer uniquement pour la méthode souhaitée (ex: Zoe)
-# df_distances_raw = df_distances_raw.loc[
-#     df_distances_raw["method"].str.lower() == target_method.lower()
-# ]
+KEYS = ["subject", "side", "label_test", "label_retest"]
+
+repro_pairs = (
+    df_overlaps[["subject", "side", "test_basin", "retest_basin"]]
+    .rename(columns={"test_basin": "label_test", "retest_basin": "label_retest"})
+    .drop_duplicates()
+)
+
+# Harmoniser les types avant la jointure (évite 12 vs 12.0 vs "12")
+def _normalize_keys(df):
+    df = df.copy()
+    df["subject"] = df["subject"].astype(str)
+    df["side"] = df["side"].astype(str)
+    for col in ("label_test", "label_retest"):
+        df[col] = pd.to_numeric(df[col]).astype(int).astype(str)
+    return df
+
+repro_pairs = _normalize_keys(repro_pairs)
+df_distances_raw = _normalize_keys(df_distances_raw)
+
+n_before = len(df_distances_raw)
+df_distances_raw = df_distances_raw.merge(repro_pairs, on=KEYS, how="inner")
+print(f"Distances: {len(df_distances_raw)}/{n_before} lignes gardées")
 
 df_distances = df_distances_raw.melt(
-    id_vars=[
-        "subject",
-        "side",
-        "label_test",
-        "label_retest",
-        "method",
-    ],
+    id_vars=KEYS + ["method"],
     value_vars=list(METRICS.keys()),
     var_name="metric",
     value_name="distance",
 )
+
 
 # ------------------------------------------------------------------
 # Outputs

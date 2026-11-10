@@ -12,6 +12,7 @@ from scipy.spatial.distance import cdist
 import slam.io as sio
 from itertools import combinations
 from scipy.spatial import cKDTree
+import sys
 
 
 # def hausdorff_distance(set_sense, set_antisense, metric="euclidean"):
@@ -98,7 +99,7 @@ def hausdorff_distance(set_sense, set_antisense):
     mean_distance = np.mean(all_min_distances)
     p95_distance = np.percentile(all_min_distances, 95)
 
-    return hausdorff, mean_distance, p95_distance, 
+    return hausdorff, mean_distance, p95_distance
 
 
 def compute_sulci_hausdorff(
@@ -150,15 +151,10 @@ def compute_sulci_hausdorff(
         test_points = mesh_test.vertices[test_mask]
         retest_points = mesh_retest.vertices[retest_mask]
 
-        if len(test_points) == 0 or len(retest_points) == 0:
-            continue
+        hausdorff = mean_nn = p95_nn = np.nan
 
-        else:
-            (
-                hausdorff,
-                mean_nn,
-                p95_nn,
-            ) = hausdorff_distance(
+        if len(test_points) > 0 and len(retest_points) > 0:
+            hausdorff, mean_nn, p95_nn = hausdorff_distance(
                 test_points,
                 retest_points,
             )
@@ -169,6 +165,8 @@ def compute_sulci_hausdorff(
                 "side": side,
                 "label_test": int(label_test),
                 "label_retest": int(label_retest),
+                "n_test": int(test_mask.sum()),
+                "n_retest": int(retest_mask.sum()),
                 "hausdorff": hausdorff,
                 "mean_nn": mean_nn,
                 "p95_nn": p95_nn,
@@ -218,6 +216,7 @@ def compute_intermethod_hausdorff(
 
     return results
 
+sys.stderr = sys.stdout = open(snakemake.log[0], "w")
 
 df_matches = pd.read_csv(snakemake.input.match_tsv, sep="\t")
 df_matches["overlap"] = df_matches["overlap"].astype(float)
@@ -229,37 +228,45 @@ sphere_reg_retest = sio.load_mesh(snakemake.input.sphere_reg_gii_retest)
 subject = snakemake.wildcards.sub
 side = snakemake.wildcards.side
 
-# -------------------------------------------------------------------------
-# Méthodes actives : nom -> (texture test, texture retest)
-# Pour réactiver Trace/Cachia/Mindboggle : ajouter une entrée ici, et les
-# inputs/outputs correspondants dans la règle.
-# -------------------------------------------------------------------------
-methods_test = {
-    "Zoe": sio.load_texture(snakemake.input.sulci_zoe_labeled_test).darray[0],
-}
-methods_retest = {
-    "Zoe": sio.load_texture(snakemake.input.sulci_zoe_labeled_retest).darray[0],
-}
-
-# -------------------------------------------------------------------------
-# Reproductibilité test/retest
-# -------------------------------------------------------------------------
 RESULT_COLS = [
     "subject", "side", "label_test", "label_retest",
     "hausdorff", "mean_nn", "p95_nn",
 ]
 
-zoe_results = compute_sulci_hausdorff(
-    methods_test["Zoe"],
-    methods_retest["Zoe"],
-    sphere_reg_test,
-    sphere_reg_retest,
-    df_reproducible,
-    subject,
-    side,
-).reindex(columns=RESULT_COLS)
+# nom -> (suffixe des clés d'input, clé d'output)
+# Une méthode n'est traitée que si la règle déclare ses inputs ET son output
+# (hausdorff_dist2 ne déclare que Zoe).
+ALL_METHODS = {
+    "Zoe":        ("zoe",        "zoe_results_tsv"),
+    "Trace":      ("trace",      "trace_results_tsv"),
+    "Mindboggle": ("mindboggle", "mindboggle_results_tsv"),
+}
 
-zoe_results.to_csv(snakemake.output.zoe_results_tsv, sep="\t", index=False)
+methods_test, methods_retest = {}, {}
+for method, (key, out_key) in ALL_METHODS.items():
+    in_test = f"sulci_{key}_labeled_test"
+    in_retest = f"sulci_{key}_labeled_retest"
+    if not (hasattr(snakemake.input, in_test)
+            and hasattr(snakemake.input, in_retest)
+            and hasattr(snakemake.output, out_key)):
+        continue
+    methods_test[method] = sio.load_texture(getattr(snakemake.input, in_test)).darray[0]
+    methods_retest[method] = sio.load_texture(getattr(snakemake.input, in_retest)).darray[0]
+
+# Reproductibilité test/retest, une sortie par méthode
+for method, (key, out_key) in ALL_METHODS.items():
+    if method not in methods_test:
+        continue
+    results = compute_sulci_hausdorff(
+        methods_test[method],
+        methods_retest[method],
+        sphere_reg_test,
+        sphere_reg_retest,
+        df_reproducible,
+        subject,
+        side,
+    ).reindex(columns=RESULT_COLS)
+    results.to_csv(getattr(snakemake.output, out_key), sep="\t", index=False)
 
 # # -------------------------------------------------------------------------
 # # Inter-méthodes (vide tant qu'il n'y a qu'une seule méthode)

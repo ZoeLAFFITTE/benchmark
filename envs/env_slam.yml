@@ -13,3 +13,4 @@ dependencies:
       - pyvista
       - seaborn
       - plotly
+      - potpourri3d

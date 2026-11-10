@@ -7,6 +7,7 @@ import numpy as np
 import networkx as nx
 import slam.io as sio
 import slam.texture as stex
+import sys
 
 
 def build_mesh_graph(mesh):
@@ -87,6 +88,7 @@ def labeling_sulci(texture, mesh):
 
     return labeled_texture
 
+sys.stderr = sys.stdout = open(snakemake.log[0], "w")
 
 sphere_reg_mesh = sio.load_mesh(snakemake.input.sphere_reg_gii)
 filtered_basins = np.load(snakemake.input.filtered_basins_npy).tolist()
@@ -119,7 +121,10 @@ for input_file, output_file in zip(input_files, snakemake.output):
 
     sulci_labeled = np.zeros(n_vertices, dtype=np.int32)
 
-    sulci_labeled[sulci_comp > 0] = basins[sulci_comp > 0]
+    # Sommets sulcaux uniquement dans un bassin reproductible (>= THR)
+    mask = (sulci_comp > 0) & np.isin(basins, filtered_basins)
+
+    sulci_labeled[mask] = basins[mask]
 
     print(sulci_labeled)
     sio.write_texture(

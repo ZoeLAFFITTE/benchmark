@@ -142,7 +142,7 @@ def compute_sulci_hausdorff(
     results = []
 
     for label_test, label_retest in df_overlap[
-        ["test_basin", "retest_basin"]
+        ["HCP_test_basin", "HCP_retest_basin"]
     ].itertuples(index=False, name=None):
 
         test_mask = test_texture == label_test
@@ -163,10 +163,10 @@ def compute_sulci_hausdorff(
             {
                 "subject": subject_id,
                 "side": side,
-                "label_test": int(label_test),
-                "label_retest": int(label_retest),
-                "n_test": int(test_mask.sum()),
-                "n_retest": int(retest_mask.sum()),
+                "label_HCP_test": int(label_test),
+                "label_HCP_retest": int(label_retest),
+                "n_HCP_test": int(test_mask.sum()),
+                "n_HCP_retest": int(retest_mask.sum()),
                 "hausdorff": hausdorff,
                 "mean_nn": mean_nn,
                 "p95_nn": p95_nn,
@@ -216,91 +216,78 @@ def compute_intermethod_hausdorff(
 
     return results
 
+
 sys.stderr = sys.stdout = open(snakemake.log[0], "w")
 
-df_matches = pd.read_csv(snakemake.input.match_tsv, sep="\t")
+# Load basin matching table
+df_matches = pd.read_csv(
+    snakemake.input.match_tsv,
+    sep="\t",
+)
+
 df_matches["overlap"] = df_matches["overlap"].astype(float)
-df_reproducible = df_matches[df_matches["overlap"] >= snakemake.params.thr_basins]
 
-sphere_reg_test = sio.load_mesh(snakemake.input.sphere_reg_gii_test)
-sphere_reg_retest = sio.load_mesh(snakemake.input.sphere_reg_gii_retest)
+df_reproducible = df_matches[
+    df_matches["overlap"] >= snakemake.params.thr_basins
+]
 
+# Load spherical registration meshes
+sphere_reg_test = sio.load_mesh(
+    snakemake.input.sphere_reg_gii_test
+)
+
+sphere_reg_retest = sio.load_mesh(
+    snakemake.input.sphere_reg_gii_retest
+)
+
+# Load labeled sulcal skeletons
+texture_test = sio.load_texture(
+    snakemake.input.skeletons_labeled_test
+).darray[0]
+
+texture_retest = sio.load_texture(
+    snakemake.input.skeletons_labeled_retest
+).darray[0]
+
+# Subject and hemisphere
 subject = snakemake.wildcards.sub
 side = snakemake.wildcards.side
 
+# Compute test-retest distances
+results = compute_sulci_hausdorff(
+    texture_test,
+    texture_retest,
+    sphere_reg_test,
+    sphere_reg_retest,
+    df_reproducible,
+    subject,
+    side,
+)
+
+# Method name (first directory of method_path)
+method = snakemake.wildcards.method_path.split("/")[0]
+
+# Add method column
+results["methode"] = method
+
+# Save results
 RESULT_COLS = [
-    "subject", "side", "label_test", "label_retest",
-    "hausdorff", "mean_nn", "p95_nn",
+    "subject",
+    "side",
+    "methode",
+    "label_HCP_test",
+    "label_HCP_retest",
+    "n_HCP_test",
+    "n_HCP_retest",
+    "hausdorff",
+    "mean_nn",
+    "p95_nn",
 ]
 
-# nom -> (suffixe des clés d'input, clé d'output)
-# Une méthode n'est traitée que si la règle déclare ses inputs ET son output
-# (hausdorff_dist2 ne déclare que Zoe).
-ALL_METHODS = {
-    "Zoe":        ("zoe",        "zoe_results_tsv"),
-    "Trace":      ("trace",      "trace_results_tsv"),
-    "Mindboggle": ("mindboggle", "mindboggle_results_tsv"),
-}
+results = results.reindex(columns=RESULT_COLS)
 
-methods_test, methods_retest = {}, {}
-for method, (key, out_key) in ALL_METHODS.items():
-    in_test = f"sulci_{key}_labeled_test"
-    in_retest = f"sulci_{key}_labeled_retest"
-    if not (hasattr(snakemake.input, in_test)
-            and hasattr(snakemake.input, in_retest)
-            and hasattr(snakemake.output, out_key)):
-        continue
-    methods_test[method] = sio.load_texture(getattr(snakemake.input, in_test)).darray[0]
-    methods_retest[method] = sio.load_texture(getattr(snakemake.input, in_retest)).darray[0]
-
-# Reproductibilité test/retest, une sortie par méthode
-for method, (key, out_key) in ALL_METHODS.items():
-    if method not in methods_test:
-        continue
-    results = compute_sulci_hausdorff(
-        methods_test[method],
-        methods_retest[method],
-        sphere_reg_test,
-        sphere_reg_retest,
-        df_reproducible,
-        subject,
-        side,
-    ).reindex(columns=RESULT_COLS)
-    results.to_csv(getattr(snakemake.output, out_key), sep="\t", index=False)
-
-# # -------------------------------------------------------------------------
-# # Inter-méthodes (vide tant qu'il n'y a qu'une seule méthode)
-# # -------------------------------------------------------------------------
-# INTER_COLS = [
-#     "subject", "session", "side", "method_1", "method_2",
-#     "basin_label", "hausdorff", "mean_nn", "p95_nn",
-# ]
-
-# intermethod_results = []
-
-# for method_1, method_2 in combinations(methods_test.keys(), 2):
-#     for session, methods, mesh, labels in (
-#         ("test", methods_test, sphere_reg_test,
-#          df_reproducible["test_basin"].unique()),
-#         ("retest", methods_retest, sphere_reg_retest,
-#          df_reproducible["retest_basin"].unique()),
-#     ):
-#         results = compute_intermethod_hausdorff(
-#             methods[method_1], methods[method_2], mesh, labels,
-#         )
-#         for result in results:
-#             intermethod_results.append(
-#                 {
-#                     "subject": subject,
-#                     "session": session,
-#                     "side": side,
-#                     "method_1": method_1,
-#                     "method_2": method_2,
-#                     **result,
-#                 }
-#             )
-
-# df_intermethod = pd.DataFrame(intermethod_results).reindex(columns=INTER_COLS)
-# df_intermethod.to_csv(
-#     snakemake.output.intermethod_results_tsv, sep="\t", index=False,
-# )
+results.to_csv(
+    snakemake.output.results_tsv,
+    sep="\t",
+    index=False,
+)

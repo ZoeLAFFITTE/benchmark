@@ -2,7 +2,7 @@
 # Output
 # ------------------------------------------------------------------
 
-output_dir: "/home/INT/laffitte.z/code/these/data/compar"
+output_dir: "/envau/work/meca/users/2025_laffite.z/code/these/benchmark/res"
 
 # ------------------------------------------------------------------
 # Input data
@@ -32,8 +32,6 @@ mesh_types:
   curv: "curvature.native.shape"
   basin: "basins_100.0_0.005_0.0"
 
-
-side: "L"
 thr_basins: 0.8
 
 

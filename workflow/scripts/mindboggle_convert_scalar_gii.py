@@ -50,7 +50,7 @@ def vtk_scalar_to_gifti(vtk_file, gii_file, dtype):
 
 input_files = [
     path for path in snakemake.input
-    if path != snakemake.input.mesh
+    if path != snakemake.input.white_gii
 ]
 
 for input_file, output_file in zip(input_files, snakemake.output):

@@ -7,39 +7,39 @@ import slam.texture as stex
 # Inputs
 # ---------------------------------------------------------------------------
 
-scurve_file_path = snakemake.input.sulci_curv
-scurve_bary_file_path = snakemake.input.sulci_curv_bary
+# scurve_file_path = snakemake.input.sulci_curv
+scurve_bary_file_path = snakemake.input.skeletons
 white_mesh = sio.load_mesh(snakemake.input.white_gii)
 
 n_vertices = len(white_mesh.vertices)
 
 
-# ---------------------------------------------------------------------------
-# Sulcal curves
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Sulcal curves
+# # ---------------------------------------------------------------------------
 
-sulci_texture = np.zeros(n_vertices, dtype=np.int8)
-sulci_label_texture = np.zeros(n_vertices, dtype=np.int32)
+# sulci_texture = np.zeros(n_vertices, dtype=np.int8)
+# sulci_label_texture = np.zeros(n_vertices, dtype=np.int32)
 
-with open(scurve_file_path, "r") as file:
-    for sulcus_id, line in enumerate(file, start=1):
-        indices = np.fromstring(line, dtype=int, sep=" ")
+# with open(scurve_file_path, "r") as file:
+#     for sulcus_id, line in enumerate(file, start=1):
+#         indices = np.fromstring(line, dtype=int, sep=" ")
 
-        sulci_texture[indices] = 1
-        sulci_label_texture[indices] = sulcus_id
+#         sulci_texture[indices] = 1
+#         sulci_label_texture[indices] = sulcus_id
 
 
-# Write binary sulci texture
-sio.write_texture(
-    stex.TextureND(darray=sulci_texture),
-    snakemake.output.sulci_gii,
-)
+# # Write binary sulci texture
+# sio.write_texture(
+#     stex.TextureND(darray=sulci_texture),
+#     snakemake.output.sulci_gii,
+# )
 
-# Write sulci label texture
-sio.write_texture(
-    stex.TextureND(darray=sulci_label_texture),
-    snakemake.output.sulci_c_gii,
-)
+# # Write sulci label texture
+# sio.write_texture(
+#     stex.TextureND(darray=sulci_label_texture),
+#     snakemake.output.sulci_c_gii,
+# )
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ sio.write_texture(
 # ---------------------------------------------------------------------------
 
 geodesic_bary_texture = np.zeros(n_vertices, dtype=np.int8)
-geodesic_bary_label_texture = np.zeros(n_vertices, dtype=np.int32)
+#geodesic_bary_label_texture = np.zeros(n_vertices, dtype=np.int32)
 
 branches = []      # liste de listes de sommets (ordre conservé)
 current = None
@@ -76,17 +76,17 @@ for sulcus_id, verts in enumerate(branches, start=1):
     verts = verts[np.sort(idx)]
 
     geodesic_bary_texture[verts] = 1
-    geodesic_bary_label_texture[verts] = sulcus_id
+    #geodesic_bary_label_texture[verts] = sulcus_id
 
 
 # Write binary barycentric sulci texture
 sio.write_texture(
     stex.TextureND(darray=geodesic_bary_texture),
-    snakemake.output.sulci_bary_gii,
+    snakemake.output.skeletons,
 )
 
-# Write barycentric sulci label texture
-sio.write_texture(
-    stex.TextureND(darray=geodesic_bary_label_texture),
-    snakemake.output.sulci_bary_c_gii,
-)
+# # Write barycentric sulci label texture
+# sio.write_texture(
+#     stex.TextureND(darray=geodesic_bary_label_texture),
+#     snakemake.output.sulci_bary_c_gii,
+# )

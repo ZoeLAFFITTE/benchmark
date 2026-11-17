@@ -1,16 +1,19 @@
 ## 1. Mean curvature ----------------------------------------------------------
 rule mindboggle_compute_mean_curvature:
     input:
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk"
+        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk",
     output:
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk"
+        curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
     singularity:
-        CONTAINERS["mindboggle"]
+        CONTAINERS["mindboggle"],
     
-    log:f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.log"
+    log:f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_mean_curvature.log",
 
     benchmark:
-        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m1.benchmark.txt"
+        f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle1.benchmark.txt"
+    
+    message :
+        "preprocessing --> Mindboggle/compute_mean_curvature() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     shell:
         """
@@ -18,7 +21,7 @@ rule mindboggle_compute_mean_curvature:
             -m 2 \
             -n 0.75 \
             {input.pial_vtk} \
-            {output.curv} \
+            {output.curv_pial_vtk} \
             2>&1 | tee {log}
         """
 
@@ -29,31 +32,34 @@ rule mindboggle_compute_travel_depth:
         pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk"
 
     output:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
+        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
 
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_travel_depth.log"
 
     benchmark:
-        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m2.benchmark.txt"
+        f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle2.benchmark.txt"
+    
+    message :
+        "preprocessing --> Mindboggle/compute_travel_depth() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     shell:
         """
         /opt/vtk_cpp_tools/travel_depth/TravelDepthMain \
             {input.pial_vtk} \
-            {output.depth} \
+            {output.depth_pial_vtk} \
             2>&1 | tee {log}
         """
 
 ## 3. Rescal depth ------------------------------------------------------------
 rule mindboggle_compute_rescale_depth:
     input:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
+        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
 
     output:
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
+        depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
     
     params:
         output_prefix=lambda wc:
@@ -62,84 +68,93 @@ rule mindboggle_compute_rescale_depth:
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_rescale_depth.log"
 
     benchmark:
-        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m3.benchmark.txt"
+        f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle3.benchmark.txt"
+    
+    message :
+        "preprocessing --> Mindboggle/compute_rescale_depth() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     shell:
         """
         /opt/miniconda-latest/envs/mb/bin/python -u \
             ./scripts/mindboggle_compute_rescale_depth.py \
-            {input.depth} \
+            {input.depth_pial_vtk} \
             {params.output_prefix} \
             2>&1 | tee {log}
         """
 
 ## 4. Depth depth threshold ---------------------------------------------------
-rule mindboggle_compute_depth_threshold:
+rule mindboggle_compute_fundi:
     input:
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
+        curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
+        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
+        depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
     
     output:
-        folds_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
-        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.npy"
+        folds_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
+        skeletons_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.skeletons.vtk",
     
     singularity:
         CONTAINERS["mindboggle"]
     
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.log"
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_fundi.log"
 
     benchmark:
-        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m4.benchmark.txt"
+        f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle4.benchmark.txt"
+    
+    message :
+        "fundi extraction --> Mindboggle() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
     
     shell:
         """
         /opt/miniconda-latest/envs/mb/bin/python -u \
             ./scripts/mindboggle_compute_folds.py \
-            {input.depth} \
-            {output.folds_vtk} \
-            {output.folds_npy} \
+            {input.curv_pial_vtk} \
+            {input.depth_pial_vtk} \
+            {input.depth_pial_vtk_res} \
+            {output.folds_pial_vtk} \
+            {output.skeletons_vtk} \
             2>&1 | tee {log}
         """
 
-## 5. Extract fundus ----------------------------------------------------------
-rule mindboggle_compute_fundi:
+
+# 5. VTIK -> GIFTII ------------------------------------------------------------
+rule mindboggle_convert_gii:
     input:
-        folds_npy=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.npy",
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
-    
-    output:
-        fundi_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.vtk",
-    
-    singularity:
-        CONTAINERS["mindboggle"]
-    
-    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.log"
+        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
+        curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
+        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
+        depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
+        folds_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
+        skeletons_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.skeletons.vtk",
 
-    benchmark:
-        f"{OUT}/benchmarks/{{test}}/{{sub}}/{{sub}}.{{side}}.m5.benchmark.txt"
-    
-    shell:
-        """
-        /opt/miniconda-latest/envs/mb/bin/python -u \
-            ./scripts/mindboggle_compute_fundi.py \
-            {input.folds_npy} \
-            {input.curv} \
-            {input.depth_rescaled} \
-            {output.fundi_vtk} \
-            2>&1 | tee {log}
-        """
+    output:
+        curv_pial_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.mean_curv.gii",
+        depth_pial_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.gii",
+        depth_pial_gii_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.gii",
+        folds_pial_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.gii",
+        skeletons=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.skeletons.gii",
+
+    conda: ENVIRONMENTS["slam"]
+
+    log: f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle_convert_gii.log"
+
+    message :
+        "postproc--> Mindboggle/convert_gii() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
+
+    script:
+        f"{workflow.basedir}/scripts/mindboggle_convert_scalar_gii.py"
 
 
 rule mindboggle_aggregate_log:
     input:
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.log",
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.log",
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.log",
-        folds=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.log",
-        fundi=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.fundi.log"
+        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_mean_curvature.log",
+        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_travel_depth.log",
+        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_rescale_depth.log",
+        skeletons=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_fundi.log",
+        convert=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle_convert_gii.log",
 
     output:
         log=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle.log"
@@ -149,13 +164,13 @@ rule mindboggle_aggregate_log:
         cat {input.curv} > {output.log}
         cat {input.depth} >> {output.log}
         cat {input.depth_rescaled} >> {output.log}
-        cat {input.folds} >> {output.log}
-        cat {input.fundi} >> {output.log}
+        cat {input.skeletons} >> {output.log}
+        cat {input.convert} >> {output.log}
 
         rm {input.curv} \
            {input.depth} \
            {input.depth_rescaled} \
-           {input.folds} \
-           {input.fundi} \
+           {input.skeletons} \
+           {input.convert} \
            2>&1 | tee {log}
         """

@@ -193,10 +193,12 @@ print(len(np.unique(basins_retest_reg)))
 df_matches = pd.DataFrame.from_dict(
     matches,
     orient="index",
-    columns=["retest_basin", "overlap", "second_overlap"],
+    columns=["HCP_retest_basin", "overlap", "second_overlap"],
 )
 
-df_matches.index.name = "test_basin"
+df_matches.index.name = "HCP_test_basin"
+
+df_matches = df_matches.reset_index()
 
 df_matches.to_csv(
     snakemake.output.match_tsv,
@@ -208,10 +210,12 @@ print(df_matches)
 
 df_matches["overlap"] = df_matches["overlap"].astype(float)
 
-df_reproducible = df_matches[df_matches["overlap"] >= snakemake.params.thr_basins]
+df_reproducible = df_matches[
+    df_matches["overlap"] >= snakemake.params.thr_basins
+]
 
-filtered_test_basins = df_reproducible.index.to_numpy(dtype=int)
-filtered_retest_basins = df_reproducible["retest_basin"].to_numpy(dtype=int)
+filtered_test_basins = df_reproducible["HCP_test_basin"].to_numpy(dtype=int)
+filtered_retest_basins = df_reproducible["HCP_retest_basin"].to_numpy(dtype=int)
 
 print("Test basins:", filtered_test_basins)
 print("Retest basins:", filtered_retest_basins)
@@ -223,9 +227,9 @@ print("Retest basins:", len(filtered_retest_basins))
 basins_test_overlap = np.zeros(len(basins_test), dtype=float)
 basins_retest_overlap = np.zeros(len(basins_retest), dtype=float)
 
-for label_test, row in df_matches.iterrows():
-    label_test = int(label_test)
-    label_retest = int(row["retest_basin"])
+for _, row in df_matches.iterrows():
+    label_test = int(row["HCP_test_basin"])
+    label_retest = int(row["HCP_retest_basin"])
     overlap = float(row["overlap"])
 
     # Attribuer l'overlap à tous les sommets du bassin correspondant
@@ -236,27 +240,27 @@ for label_test, row in df_matches.iterrows():
 # ------------------------------------------------------------------
 # Outputs
 # ------------------------------------------------------------------
-np.save(snakemake.output.filtered_basins_test_npy, filtered_test_basins)
-np.save(snakemake.output.filtered_basins_retest_npy, filtered_retest_basins)
+#np.save(snakemake.output.filtered_basins_test_npy, filtered_test_basins)
+#np.save(snakemake.output.filtered_basins_retest_npy, filtered_retest_basins)
 
-basins_test_overlap_tex = stex.TextureND(darray=basins_test_overlap)
-basins_retest_overlap_tex = stex.TextureND(darray=basins_retest_overlap)
-sio.write_texture(basins_test_overlap_tex, snakemake.output.basins_test_overlap_gii)
-sio.write_texture(basins_retest_overlap_tex, snakemake.output.basins_retest_overlap_gii)
+# basins_test_overlap_tex = stex.TextureND(darray=basins_test_overlap)
+# basins_retest_overlap_tex = stex.TextureND(darray=basins_retest_overlap)
+# sio.write_texture(basins_test_overlap_tex, snakemake.output.basins_test_overlap_gii)
+# sio.write_texture(basins_retest_overlap_tex, snakemake.output.basins_retest_overlap_gii)
 
 basins_test_reg_tex = stex.TextureND(darray=basins_test_reg)
 basins_retest_reg_tex = stex.TextureND(darray=basins_retest_reg)
 sio.write_texture(basins_test_reg_tex, snakemake.output.basins_test_reg_gii)
 sio.write_texture(basins_retest_reg_tex, snakemake.output.basins_retest_reg_gii)
 
-hist = compute_feature(df_matches)
-hist.write_html(snakemake.output.hist, include_plotlyjs="cdn")
+# hist = compute_feature(df_matches)
+# hist.write_html(snakemake.output.hist, include_plotlyjs="cdn")
 
-proj_test = compute_proj(
-    basins_test_overlap, white_test, f"{subject}_basin_overlap_test"
-)
-proj_retest = compute_proj(
-    basins_retest_overlap, white_retest, f"{subject}_basin_overlap_retest"
-)
-proj_test.write_html(snakemake.output.proj_overlap_test, include_plotlyjs="cdn")
-proj_retest.write_html(snakemake.output.proj_overlap_retest, include_plotlyjs="cdn")
+# proj_test = compute_proj(
+#     basins_test_overlap, white_test, f"{subject}_basin_overlap_test"
+# )
+# proj_retest = compute_proj(
+#     basins_retest_overlap, white_retest, f"{subject}_basin_overlap_retest"
+# )
+# proj_test.write_html(snakemake.output.proj_overlap_test, include_plotlyjs="cdn")
+# proj_retest.write_html(snakemake.output.proj_overlap_retest, include_plotlyjs="cdn")

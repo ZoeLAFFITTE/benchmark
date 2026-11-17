@@ -992,7 +992,7 @@ if __name__ == "__main__":
     #paths
     white_path = snakemake.input.white_gii
     dpf_white_path = snakemake.input.dpf_white_gii
-    basins_path = snakemake.input.basins_gii
+    basins_path = snakemake.input.basins_white_gii
 
     #chargement des données
     white_mesh = sio.load_mesh(white_path)
@@ -1023,7 +1023,7 @@ if __name__ == "__main__":
 
     #voisnage
     neigh = white_mesh.vertex_neighbors
-    stats_rows = []
+    # stats_rows = []
 
     # ------------------------------------------------------------------
     # ALGORITHME PRINCIPAL
@@ -1097,9 +1097,9 @@ if __name__ == "__main__":
         # Bassin entièrement érodé par prune_frozen_borders : on l'ignore
         if len(new_indices_fold) == 0:
             print(f"⚠️ Bassin {label} vide après suppression des sommets gelés : ignoré.")
-            stats_rows.append(
-                basin_stats(label, np.array([], dtype=int), None, None, dpfstar_reversed)
-            )
+            # stats_rows.append(
+            #     basin_stats(label, np.array([], dtype=int), None, None, dpfstar_reversed)
+            # )
             print(f"FIN BASIN: {label} (bassin vide)")
             continue
 
@@ -1132,9 +1132,9 @@ if __name__ == "__main__":
             if pit is not None:
                 all_pits.append(int(pit))       # all_paths[pit] = 100 à la fin
             print(f"FIN BASIN: {label} (cas dégénéré)")
-            stats_rows.append(
-                basin_stats(label, skeleton, None, pit_expected, dpfstar_reversed)
-            )
+            # stats_rows.append(
+            #     basin_stats(label, skeleton, None, pit_expected, dpfstar_reversed)
+            # )
             continue
 
         probability_map = probability_paths(white_mesh, paths)
@@ -1165,9 +1165,9 @@ if __name__ == "__main__":
         print("-" * 50)
         all_skeletons[list(pruned_graph.nodes)] = True
 
-        stats_rows.append(
-            basin_stats(label, skeleton, pruned_graph, pit_expected, dpfstar_reversed)
-        )
+        # stats_rows.append(
+        #     basin_stats(label, skeleton, pruned_graph, pit_expected, dpfstar_reversed)
+        # )
 
         # Accumulation des résultats de ce basin (les basins sont disjoints)
         mask = probability_map > 0
@@ -1191,92 +1191,92 @@ if __name__ == "__main__":
     print("-" * 50)
 
     sio.write_texture(stex.TextureND(darray=all_skeletons), snakemake.output.skeletons)
-    sio.write_texture(stex.TextureND(darray=all_borders), snakemake.output.borders)
-    sio.write_texture(stex.TextureND(darray=all_basins), snakemake.output.basins)
-    sio.write_texture(stex.TextureND(darray=all_paths), snakemake.output.proba)
+    # sio.write_texture(stex.TextureND(darray=all_borders), snakemake.output.borders)
+    # sio.write_texture(stex.TextureND(darray=all_basins), snakemake.output.basins)
+    # sio.write_texture(stex.TextureND(darray=all_paths), snakemake.output.proba)
 
-    df_stats = pd.DataFrame(stats_rows)
-    df_stats.to_csv(snakemake.output.stats, sep="\t", index=False)
+    # df_stats = pd.DataFrame(stats_rows)
+    # df_stats.to_csv(snakemake.output.stats, sep="\t", index=False)
 
-    # ------------------------------------------------------------------
-    # Figure : tous les basins
-    # ------------------------------------------------------------------
-    fig = splt.plot_mesh(
-        {"vertices": white_mesh.vertices, "faces": white_mesh.faces},
-        {"values": dpfstar_reversed, "mode": "vertex"},
-        {"template": "plotly_white", "colorscale": "Sunset"},
-        caption=False,
-    )
+    # # ------------------------------------------------------------------
+    # # Figure : tous les basins
+    # # ------------------------------------------------------------------
+    # fig = splt.plot_mesh(
+    #     {"vertices": white_mesh.vertices, "faces": white_mesh.faces},
+    #     {"values": dpfstar_reversed, "mode": "vertex"},
+    #     {"template": "plotly_white", "colorscale": "Sunset"},
+    #     caption=False,
+    # )
 
-    mesh_vertices = np.asarray(white_mesh.vertices)
-    mesh_normals = np.asarray(white_mesh.vertex_normals)
+    # mesh_vertices = np.asarray(white_mesh.vertices)
+    # mesh_normals = np.asarray(white_mesh.vertex_normals)
 
-    def lifted(indices, offset):
-        indices = np.asarray(indices, dtype=int)
-        return mesh_vertices[indices] + offset * mesh_normals[indices]
+    # def lifted(indices, offset):
+    #     indices = np.asarray(indices, dtype=int)
+    #     return mesh_vertices[indices] + offset * mesh_normals[indices]
 
-    points = lifted(np.arange(len(mesh_vertices)), 0.3)
+    # points = lifted(np.arange(len(mesh_vertices)), 0.3)
 
-    # Sommets selon leur nombre de passages (tous basins confondus)
-    counts = np.unique(global_probability[global_probability > 0])
-    colors = px.colors.sample_colorscale(
-        "Turbo", np.linspace(0.05, 0.95, max(len(counts), 2))
-    )
+    # # Sommets selon leur nombre de passages (tous basins confondus)
+    # counts = np.unique(global_probability[global_probability > 0])
+    # colors = px.colors.sample_colorscale(
+    #     "Turbo", np.linspace(0.05, 0.95, max(len(counts), 2))
+    # )
 
-    for count, color in zip(counts, colors):
-        indices = np.flatnonzero(global_probability == count)
-        fig.add_trace(
-            go.Scatter3d(
-                x=points[indices, 0],
-                y=points[indices, 1],
-                z=points[indices, 2],
-                mode="markers",
-                marker={"size": 3, "color": color},
-                name=f"{count} passage{'s' if count > 1 else ''}",
-                text=[f"vertex {v}<br>{count} passage(s)" for v in indices],
-                hoverinfo="text",
-            )
-        )
+    # for count, color in zip(counts, colors):
+    #     indices = np.flatnonzero(global_probability == count)
+    #     fig.add_trace(
+    #         go.Scatter3d(
+    #             x=points[indices, 0],
+    #             y=points[indices, 1],
+    #             z=points[indices, 2],
+    #             mode="markers",
+    #             marker={"size": 3, "color": color},
+    #             name=f"{count} passage{'s' if count > 1 else ''}",
+    #             text=[f"vertex {v}<br>{count} passage(s)" for v in indices],
+    #             hoverinfo="text",
+    #         )
+    #     )
 
-    # Bifurcations, extrémités et pits de tous les basins
-    if all_bifurcations:
-        fig.add_trace(
-            splt.plot_points(
-                lifted(all_bifurcations, 0.4),
-                marker={"size": 5, "color": "grey", "symbol": "diamond"},
-            )
-        )
+    # # Bifurcations, extrémités et pits de tous les basins
+    # if all_bifurcations:
+    #     fig.add_trace(
+    #         splt.plot_points(
+    #             lifted(all_bifurcations, 0.4),
+    #             marker={"size": 5, "color": "grey", "symbol": "diamond"},
+    #         )
+    #     )
 
-    if all_endpoints:
-        fig.add_trace(
-            splt.plot_points(
-                lifted(all_endpoints, 0.4),
-                marker={"size": 5, "color": "black", "symbol": "diamond"},
-            )
-        )
+    # if all_endpoints:
+    #     fig.add_trace(
+    #         splt.plot_points(
+    #             lifted(all_endpoints, 0.4),
+    #             marker={"size": 5, "color": "black", "symbol": "diamond"},
+    #         )
+    #     )
 
-    if all_pits:
-        fig.add_trace(
-            splt.plot_points(
-                lifted(all_pits, 1.4),
-                marker={"size": 7, "color": "red", "symbol": "diamond"},
-            )
-        )
+    # if all_pits:
+    #     fig.add_trace(
+    #         splt.plot_points(
+    #             lifted(all_pits, 1.4),
+    #             marker={"size": 7, "color": "red", "symbol": "diamond"},
+    #         )
+    #     )
 
-    # Arêtes du maillage (une seule fois)
-    edge_vertices = mesh_vertices[white_mesh.edges_unique]
-    coords = np.full((len(edge_vertices), 3, 3), np.nan)
-    coords[:, :2, :] = edge_vertices
+    # # Arêtes du maillage (une seule fois)
+    # edge_vertices = mesh_vertices[white_mesh.edges_unique]
+    # coords = np.full((len(edge_vertices), 3, 3), np.nan)
+    # coords[:, :2, :] = edge_vertices
 
-    fig.add_trace(
-        go.Scatter3d(
-            x=coords[:, :, 0].ravel(),
-            y=coords[:, :, 1].ravel(),
-            z=coords[:, :, 2].ravel(),
-            mode="lines",
-            line={"color": "black", "width": 1},
-            showlegend=False,
-        )
-    )
+    # fig.add_trace(
+    #     go.Scatter3d(
+    #         x=coords[:, :, 0].ravel(),
+    #         y=coords[:, :, 1].ravel(),
+    #         z=coords[:, :, 2].ravel(),
+    #         mode="lines",
+    #         line={"color": "black", "width": 1},
+    #         showlegend=False,
+    #     )
+    # )
 
-    fig.write_html(snakemake.output.fig)
+    # fig.write_html(snakemake.output.fig)

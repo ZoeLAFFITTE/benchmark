@@ -1,93 +1,111 @@
-#!/usr/bin/env python3
-"""Nombre de feuilles (n_endpoints) en fonction du volume du mesh white."""
-# ---------------------------------------------------------------------------
-# À adapter (valeurs de ton config.yaml)
-# ---------------------------------------------------------------------------
+#!/usr/bin/env python
+
+"""
+Application morphométrique vs complexité des SFG, ISBI 2026.
+"""
+
+import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import slam.io as sio
-import yaml
-
-# ---------------------------------------------------------------------------
-# Config (équivalent de `configfile:` dans Snakemake)
-# ---------------------------------------------------------------------------
-CONFIG_FILE = Path("../config/config.yaml")   # relatif au dossier d'où tu lances le script
-with open(CONFIG_FILE) as f:
-    config = yaml.safe_load(f)
-
-DATA = Path(config["data_dir"])
-DATA_TEST = config["data_test"]
-ATLAS = config["atlas_dir"]
-DIR = config["dir"]
-SOURCES = config["sources"]
-MESH = config["mesh_types"]
-SIDES = config["side"]
-
-RAW = DIR["rawdata"]
-UP = DIR["pitsdata"]
-
-NATIVE = SOURCES["native"]
-REG = SOURCES["reg"]
-PITS = SOURCES["pits"]
-
-WHITE = MESH["white"]
-PIAL = MESH["pial"]
-APARC = MESH["aparc"]
-CURV = MESH["curv"]
-BASIN = MESH["basin"]
-SPHEREREG = MESH["sphere.reg"]
-SPHERETEMP = MESH["sphere.template"]
-WHITETEMP = MESH["white.template"]
-
-# Dans ton Snakefile, OUT est écrasé à la main : on fait pareil ici
-OUT = Path("benchmark_final")
-TSV = OUT / "aggregated" / "zoe_stats_complex.tsv"
+import slam.plot as splt
+import networkx as nx
+import slam.remeshing as srem
+from utils import utils
 
 
-# ---------------------------------------------------------------------------
-# 1. Feuilles : une ligne par bassin -> somme par hémisphère
-# ---------------------------------------------------------------------------
-stats = pd.read_csv(TSV, sep="\t", dtype={"test": str, "sub": str, "hemisphere": str})
-print("Colonnes du TSV :", list(stats.columns))   # vérifie test / sub / side / n_endpoints
+if __name__ == "__main__":
 
-leaves = (
-    stats.groupby(["test", "sub", "hemisphere"], as_index=False)
-         .agg(n_leaves=("n_endpoints", "sum"),
-              n_basins=("n_endpoints", "size"))
-)
+    with open(snakemake.log[0], "w", buffering=1) as log_file:
 
-def get_volume(row):
-    mesh_path = (
-        DATA / RAW / row["test"] / row["sub"] / NATIVE
-        / f"{row['sub']}.{row['hemisphere']}.{WHITE}.surf.gii"
-    )
-    if not mesh_path.exists():
-        print(f"[skip] mesh manquant : {mesh_path}")
-        return float("nan")
-    mesh = sio.load_mesh(str(mesh_path))
-    return mesh.volume
+        sys.stderr = sys.stdout = log_file
 
+        # 1. Wildcards and parameters
+        method = snakemake.wildcards.method_path
+        side = snakemake.wildcards.side
+        subjects = list(snakemake.params.subjects)
+        tests = list(snakemake.params.tests)
 
-leaves["volume_mm3"] = leaves.apply(get_volume, axis=1)
-df = leaves.dropna(subset=["volume_mm3"])
+        skeleton_paths = list(snakemake.input.skeletons)
+        basin_paths = list(snakemake.input.basins)
+        white_paths = list(snakemake.input.white_gii)
+        stats_paths = list(snakemake.input.stats)
+        sphere_reg_paths = list(snakemake.input.sphere_reg_gii)
 
-df.to_csv("leaves_vs_volume.tsv", sep="\t", index=False)
-print(df.describe())
+        sphere_template_path = snakemake.input.sphere_template_gii
+        white_template_path = snakemake.input.white_template_gii
 
-# ---------------------------------------------------------------------------
-# Plot
-# ---------------------------------------------------------------------------
-out_dir = OUT / "test_stat"
-out_dir.mkdir(parents=True, exist_ok=True)   # write_html ne crée pas le dossier
+        # 2. Load white mesh and textures
+        sphere_template = sio.load_mesh(sphere_template_path)
+        white_template = sio.load_mesh(white_template_path)
 
-fig = px.scatter(
-    df, x="volume_mm3", y="n_leaves",
-    color="hemisphere", symbol="test",
-    hover_data=["sub", "n_basins"],
-    labels={"volume": "Volume du mesh", "n_leaves": "Nombre de feuilles"},
-    title="Nombre de feuilles du squelette en fonction du volume",
-)
-fig.write_html(out_dir / "leaves_vs_volume.html")
-fig.show()
+        # 3. On compute les texture pour le template pour la représentation aprox
+        idx = 0
+
+        for test in tests:
+            for subject in subjects:
+                skeletons = sio.load_texture(skeleton_paths[idx]).darray[0]
+                basins = sio.load_texture(basin_paths[idx]).darray[0]
+                white = sio.load_mesh(white_paths[idx])
+                sphere_reg = sio.load_mesh(sphere_reg_paths[idx])
+                stats = pd.read_csv(stats_paths[idx], sep="\t")
+
+                # Plot1
+                boundary = get_border_mask(white.faces, basins).astype(int)
+                boundary_tex = np.zeros(basins, dtype=int)
+                boundary_tex[boundary == 1] = 1
+
+                boundary_template = np.asarray(
+                    srem.texture_spherical_interpolation_nearest_neighbor(
+                        sphere_reg,
+                        sphere_template,
+                        boundary_tex,
+                    ),
+                    dtype=float,
+                )
+
+                basins_template = np.asarray(
+                    srem.texture_spherical_interpolation_nearest_neighbor(
+                        sphere_reg,
+                        sphere_template,
+                        basins,
+                    ),
+                    dtype=float,
+                )
+
+                #pour basins, remplacer la val de chaque label pas sa stat associée
+                for label in np.unique(basins_template):
+                    stats_basin = stats[
+                        stats["basin"] == label
+                    ]
+                    label = int(label)
+                    area = stats_basin["area_basin"]
+                    n_leaves = stats_basin["n_leaves_basin"]
+
+                    if area > 0 and np.isfinite(n_leaves):
+                        basins_template[basins == label] = n_leaves / np.sqrt(area)
+                
+                label_max = float(np.max(basins_template))
+                basins_template[boundary_template == 1] = label_max
+
+                fig_1 = splt.plot_mesh(
+                    {
+                        "vertices": white_template.vertices,
+                        "faces": white_template.faces,
+                    },
+                    {
+                        "values": basins_template,
+                        "mode": "vertex",
+                    },
+                    {
+                        "template": None,
+                        "colorscale": "Turbo"
+                    },
+                    caption=False,
+                )
+                fig_1.write_html(snakemake.output.individual_plots)
+                

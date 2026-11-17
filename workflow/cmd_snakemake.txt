@@ -1,0 +1,12 @@
+#permet de détecter certaines mauvaises pratiques
+snakemake --lint
+
+#lancgement
+#snakemake --cores 100 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work"
+#snakemake --cores 10 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work" --forceall
+#snakemake --cores 100 --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work" --rerun-incomplete
+
+snakemake --cores 4 --config experiment_config="../config/benchmark.yaml" --use-conda --use-singularity --singularity-args "--bind /envau/work:/envau/work"
+
+#tuer process
+pkill -f snakemake

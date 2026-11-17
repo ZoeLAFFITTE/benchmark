@@ -1,6 +1,7 @@
+
 #!/usr/bin/env python
 """
-Relabel sulcal fundi vertices according to the reproducible basins they cross.
+Relabel sulcal fundi vertices according to the basins they cross.
 """
 
 import numpy as np
@@ -13,17 +14,6 @@ import sys
 def build_mesh_graph(mesh):
     """
     Build a weighted graph from a surface mesh.
-
-    Parameters
-    ----------
-    mesh : trimesh.Trimesh
-        Surface mesh used to construct the graph.
-
-    Returns
-    -------
-    graph : networkx.Graph
-        Graph representing the mesh, with mesh edges as graph edges and
-        edge lengths as weights.
     """
     graph = nx.Graph()
     edges = mesh.edges_unique
@@ -42,17 +32,6 @@ def build_mesh_graph(mesh):
 def normalize_texture(texture):
     """
     Convert a sulcal texture to a binary texture.
-
-    Parameters
-    ----------
-    texture : numpy.ndarray
-        Sulcal texture in which -1 and 0 represent non-sulcal vertices.
-
-    Returns
-    -------
-    numpy.ndarray
-        Binary texture with 0 for non-sulcal vertices and 1 for sulcal
-        vertices.
     """
     return np.where((texture == -1) | (texture == 0), 0, 1)
 
@@ -60,19 +39,6 @@ def normalize_texture(texture):
 def labeling_sulci(texture, mesh):
     """
     Label each connected sulcal component with a unique integer.
-
-    Parameters
-    ----------
-    texture : numpy.ndarray
-        Binary sulcal texture, with 1 indicating sulcal vertices.
-    mesh : trimesh.Trimesh
-        Surface mesh corresponding to the texture.
-
-    Returns
-    -------
-    labeled_texture : numpy.ndarray
-        Texture in which each connected sulcal component is assigned a
-        unique integer label starting from 1.
     """
     graph = build_mesh_graph(mesh)
 
@@ -88,46 +54,48 @@ def labeling_sulci(texture, mesh):
 
     return labeled_texture
 
-sys.stderr = sys.stdout = open(snakemake.log[0], "w")
 
-sphere_reg_mesh = sio.load_mesh(snakemake.input.sphere_reg_gii)
-filtered_basins = np.load(snakemake.input.filtered_basins_npy).tolist()
-basins = sio.load_texture(snakemake.input.basins_gii).darray[0]
+if __name__ == "__main__":
 
-print(np.unique(basins))
-print(min(np.unique(basins)))
+    with open(snakemake.log[0], "w", buffering=1) as log_file:
+        sys.stderr = sys.stdout = log_file
 
-n_vertices = len(sphere_reg_mesh.vertices)
+        sphere_reg_mesh = sio.load_mesh(snakemake.input.sphere_reg_gii)
 
-input_files = [
-    path
-    for path in snakemake.input
-    if path
-    not in {
-        snakemake.input.filtered_basins_npy,
-        snakemake.input.basins_gii,
-        snakemake.input.sphere_reg_gii,
-    }
-]
+        basins = sio.load_texture(
+            snakemake.input.basins_gii
+        ).darray[0]
 
-for input_file, output_file in zip(input_files, snakemake.output):
+        n_vertices = len(sphere_reg_mesh.vertices)
 
-    print(input_file)
-    print(output_file)
+        # Identification de la méthode
+        method = snakemake.wildcards.method_path
 
-    sulci = sio.load_texture(input_file).darray[0]
-    sulci_normalised = normalize_texture(sulci)
-    sulci_comp = labeling_sulci(sulci_normalised, sphere_reg_mesh)
+        # Chargement du squelette correspondant à cette méthode
+        input_file = snakemake.input.skeleton
+        output_file = snakemake.output.skeletons_labeled
 
-    sulci_labeled = np.zeros(n_vertices, dtype=np.int32)
+        print(f"Method: {method}")
+        print(f"Input skeleton: {input_file}")
+        print(f"Output texture: {output_file}")
 
-    # Sommets sulcaux uniquement dans un bassin reproductible (>= THR)
-    mask = (sulci_comp > 0) & np.isin(basins, filtered_basins)
+        sulci = sio.load_texture(input_file).darray[0]
 
-    sulci_labeled[mask] = basins[mask]
+        # Identification des composantes sulcales
+        sulci_normalised = normalize_texture(sulci)
+        sulci_comp = labeling_sulci(sulci_normalised, sphere_reg_mesh)
 
-    print(sulci_labeled)
-    sio.write_texture(
-        stex.TextureND(darray=sulci_labeled[np.newaxis, :]),
-        output_file,
-    )
+        # Conservation de tous les bassins traversés par le squelette
+        sulci_labeled = np.zeros(n_vertices, dtype=np.int32)
+
+        mask = sulci_comp > 0
+
+        sulci_labeled[mask] = basins[mask]
+
+        print(f"Number of labeled vertices: {np.count_nonzero(sulci_labeled)}")
+        print(f"Unique labels: {np.unique(sulci_labeled)}")
+
+        sio.write_texture(
+            stex.TextureND(darray=sulci_labeled[np.newaxis, :]),
+            output_file,
+        )

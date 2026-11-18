@@ -25,6 +25,7 @@ suppressPackageStartupMessages({
     library(stringr)
     library(forcats)
     library(effectsize)
+    library(knitr)
 })
 
 # 3. Snakemake inputs and outputs
@@ -65,6 +66,28 @@ hausdorff <- read_tsv_safe(hausdorff_files)
 
 cat("Concatenating descriptive files...\n")
 descriptive <- read_tsv_safe(desc_files)
+
+# Standardisation des identifiants de sujets
+matching <- matching %>%
+  mutate(subject = as.character(subject))
+
+hausdorff <- hausdorff %>%
+  mutate(subject = as.character(subject))
+
+descriptive <- descriptive %>%
+  mutate(subject = as.character(subject))
+
+cat("\n--- MATCHING ---\n")
+names(matching)
+print(head(matching, 3))
+
+cat("\n--- HAUSDORFF ---\n")
+names(hausdorff)
+print(head(hausdorff, 3))
+
+cat("\n--- DESCRIPTIVE ---\n")
+names(descriptive)
+print(head(descriptive, 3))
 
 # ------------------------------------------------------------
 # Exclude label 0 from all datasets
@@ -117,6 +140,153 @@ if ("subject" %in% names(descriptive)) {
             method = as.character(method)
         )
 }
+
+# ============================================================
+# Reconstruction de all_dist à partir des trois tables
+# ============================================================
+
+# Mesures descriptives du côté TEST
+desc_test <- descriptive %>%
+  filter(test == "HCP_test") %>%
+  transmute(
+    method, subject, side,
+    label_HCP_test = basin,
+    IG_test = IG,
+    area_mesh_test = area_mesh,
+    volume_mesh_test = volume_mesh,
+    nb_feuilles_test = n_leaves_basin,
+    length_test = length_basin,
+    area_basin_test = area_basin,
+    n_cc_basin_test = n_cc_basin
+  )
+
+# Mesures descriptives du côté RETEST
+desc_retest <- descriptive %>%
+  filter(test == "HCP_retest") %>%
+  transmute(
+    method, subject, side,
+    label_HCP_retest = basin,
+    IG_retest = IG,
+    area_mesh_retest = area_mesh,
+    volume_mesh_retest = volume_mesh,
+    nb_feuilles_retest = n_leaves_basin,
+    length_retest = length_basin,
+    area_basin_retest = area_basin,
+    n_cc_basin_retest = n_cc_basin
+  )
+
+# Appariement des trois tables
+all_dist <- hausdorff %>%
+  inner_join(
+    matching,
+    by = c(
+      "subject", "side",
+      "label_HCP_test", "label_HCP_retest"
+    )
+  ) %>%
+  left_join(
+    desc_test,
+    by = c("method", "subject", "side", "label_HCP_test")
+  ) %>%
+  left_join(
+    desc_retest,
+    by = c("method", "subject", "side", "label_HCP_retest")
+  ) %>%
+  mutate(
+    # Hypothèse : mean_nn correspond à l'ancien mean_dist
+    mean_dist = mean_nn
+  )
+
+cat("\n--- Vérification de all_dist ---\n")
+cat("Nombre de lignes :", nrow(all_dist), "\n")
+cat("Nombre de méthodes :", n_distinct(all_dist$method), "\n")
+
+cat("\nValeurs manquantes :\n")
+print(
+  all_dist %>%
+    summarise(
+      mean_dist_NA = sum(is.na(mean_dist)),
+      area_test_NA = sum(is.na(area_basin_test)),
+      area_retest_NA = sum(is.na(area_basin_retest)),
+      length_test_NA = sum(is.na(length_test)),
+      length_retest_NA = sum(is.na(length_retest))
+    )
+)
+
+cat("\nNombre de lignes par méthode :\n")
+print(count(all_dist, method))
+
+all_dist_resume <- all_dist %>%
+  group_by(method, subject, side) %>%
+  summarise(
+    nb_cc_moyen = mean(
+      c(n_cc_basin_test, n_cc_basin_retest),
+      na.rm = TRUE
+    ),
+    length_moyenne = mean(
+      c(length_test, length_retest),
+      na.rm = TRUE
+    ),
+    nb_feuilles_moyen = mean(
+      c(nb_feuilles_test, nb_feuilles_retest),
+      na.rm = TRUE
+    ),
+    aire_non_couverte_pourc =
+      sum(
+        area_basin_test[is.na(mean_dist)] +
+          area_basin_retest[is.na(mean_dist)],
+        na.rm = TRUE
+      ) /
+      sum(
+        area_basin_test + area_basin_retest,
+        na.rm = TRUE
+      ) * 100,
+    nb_bassins = n(),
+    nb_bassins_mean_dist_NA = sum(is.na(mean_dist)),
+    .groups = "drop"
+  )
+
+tableau_methodes <- all_dist %>%
+  filter(overlap >= 0.7) %>%
+  group_by(method) %>%
+  summarise(
+    mean_dist_mean = mean(mean_dist, na.rm = TRUE),
+    mean_dist_median = median(mean_dist, na.rm = TRUE),
+    mean_dist_Q1 = quantile(mean_dist, 0.25, na.rm = TRUE),
+    mean_dist_Q3 = quantile(mean_dist, 0.75, na.rm = TRUE),
+    mean_dist_IQR = IQR(mean_dist, na.rm = TRUE),
+    mean_dist_range = diff(range(mean_dist, na.rm = TRUE)),
+    mean_dist_var = var(mean_dist, na.rm = TRUE),
+    mean_dist_sd = sd(mean_dist, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    all_dist_resume %>%
+      group_by(method) %>%
+      summarise(
+        nb_cc_moyen = mean(nb_cc_moyen, na.rm = TRUE),
+        length_moyenne = mean(length_moyenne, na.rm = TRUE),
+        nb_feuilles_moyen = mean(nb_feuilles_moyen, na.rm = TRUE),
+        aire_non_couverte_pourc =
+          mean(aire_non_couverte_pourc, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    by = "method"
+  )
+
+tableau_latex <- kable(
+  tableau_methodes,
+  format = "latex",
+  booktabs = TRUE,
+  digits = 3,
+  caption = "Summary statistics by method",
+  label = "tab:summary_methods"
+)
+
+writeLines(
+  tableau_latex,
+  output$tab
+)
 
 # ============================================================
 # 5. Export global TSV files
@@ -1151,11 +1321,221 @@ ggsave(
 cat("Both figures exported successfully.\n")
 
 # ============================================================
-# 10. Close logs
+# 10. Correlations by subject + Friedman + post-hoc Wilcoxon
 # ============================================================
+
+cat("\nPreparing subject-level correlations...\n")
+
+# ------------------------------------------------------------
+# 10.1. Reconstruct df_all_basins from all_dist
+# ------------------------------------------------------------
+# all_dist contains label_HCP_test rather than basin_test.
+# We calculate the mean number of leaves and basin area
+# across test and retest for each matched basin.
+
+df_all_basins <- all_dist %>%
+    mutate(
+        nb_feuilles = (
+            nb_feuilles_test + nb_feuilles_retest
+        ) / 2,
+
+        area_basin = (
+            area_basin_test + area_basin_retest
+        ) / 2
+    ) %>%
+    group_by(
+        method,
+        subject,
+        basin_test = label_HCP_test
+    ) %>%
+    summarise(
+        nb_feuilles = mean(
+            nb_feuilles,
+            na.rm = TRUE
+        ),
+        area_basin = mean(
+            area_basin,
+            na.rm = TRUE
+        ),
+        .groups = "drop"
+    ) %>%
+    mutate(
+        x = sqrt(area_basin)
+    ) %>%
+    filter(
+        is.finite(x),
+        is.finite(nb_feuilles)
+    )
+
+cat("Number of rows in df_all_basins:", nrow(df_all_basins), "\n")
+cat("Methods in df_all_basins:\n")
+print(unique(df_all_basins$method))
+
+# ------------------------------------------------------------
+# 10.2. Pearson correlation for each method and subject
+# ------------------------------------------------------------
+
+r_subject <- df_all_basins %>%
+    group_by(method, subject) %>%
+    group_modify(~ cor_safe(.x)) %>%
+    ungroup() %>%
+    filter(is.finite(r))
+
+cat("\nSubject-level correlations:\n")
+print(r_subject)
+
+if (nrow(r_subject) == 0) {
+    stop(
+        "No valid subject-level correlations could be calculated. ",
+        "Check the number of basins and the variability of the data."
+    )
+}
+
+# ------------------------------------------------------------
+# 10.3. Select methods using the order defined in section 6
+# ------------------------------------------------------------
+
+methods_comparison <- methods[
+    methods %in% unique(as.character(r_subject$method))
+]
+
+cat(
+    "\nMethods compared:",
+    paste(methods_comparison, collapse = ", "),
+    "\n"
+)
+
+if (length(methods_comparison) < 2) {
+    stop(
+        "At least two methods with valid subject-level correlations ",
+        "are required for the Friedman test."
+    )
+}
+
+# ------------------------------------------------------------
+# 10.4. Prepare paired data for statistical comparisons
+# ------------------------------------------------------------
+
+r_wide <- r_subject %>%
+    mutate(
+        method = as.character(method),
+        subject = as.character(subject)
+    ) %>%
+    select(subject, method, r) %>%
+    pivot_wider(
+        names_from = method,
+        values_from = r
+    ) %>%
+    drop_na(all_of(methods_comparison))
+
+cat(
+    "Number of subjects with complete data:",
+    nrow(r_wide),
+    "\n"
+)
+
+if (nrow(r_wide) < 2) {
+    stop(
+        "The Friedman and paired Wilcoxon tests require at least ",
+        "two subjects with valid correlations for every compared method. ",
+        "Currently available: ",
+        nrow(r_wide),
+        " complete subject(s)."
+    )
+}
+
+# ------------------------------------------------------------
+# 10.5. Friedman test
+# ------------------------------------------------------------
+
+cat("\nRunning Friedman test...\n")
+
+friedman_result <- friedman.test(
+    as.matrix(
+        r_wide[, methods_comparison, drop = FALSE]
+    )
+)
+
+print(friedman_result)
+
+friedman_stats <- tibble(
+    test = "Friedman",
+    n_subjects = nrow(r_wide),
+    n_methods = length(methods_comparison),
+    methods = paste(methods_comparison, collapse = ";"),
+    statistic = unname(friedman_result$statistic),
+    df = unname(friedman_result$parameter),
+    p_value = friedman_result$p.value
+)
+
+write_tsv(
+    friedman_stats,
+    output$friedman
+)
+
+cat("Friedman results exported to:", output$friedman, "\n")
+
+# ------------------------------------------------------------
+# 10.6. Pairwise Wilcoxon signed-rank tests
+# ------------------------------------------------------------
+
+cat("\nRunning pairwise Wilcoxon tests...\n")
+
+method_pairs <- combn(
+    methods_comparison,
+    2,
+    simplify = FALSE
+)
+
+posthoc <- bind_rows(
+    lapply(method_pairs, function(pair) {
+
+        method_1 <- pair[1]
+        method_2 <- pair[2]
+
+        values_1 <- r_wide[[method_1]]
+        values_2 <- r_wide[[method_2]]
+
+        wt <- wilcox.test(
+            values_1,
+            values_2,
+            paired = TRUE,
+            exact = FALSE
+        )
+
+        tibble(
+            method_1 = method_1,
+            method_2 = method_2,
+            n_subjects = nrow(r_wide),
+            wilcox_V = unname(wt$statistic),
+            p_value = wt$p.value
+        )
+    })
+) %>%
+    mutate(
+        p_holm = p.adjust(
+            p_value,
+            method = "holm"
+        )
+    )
+
+print(posthoc)
+
+write_tsv(
+    posthoc,
+    output$posthoc
+)
+
+cat("Post-hoc results exported to:", output$posthoc, "\n")
+
+cat("\nStatistical comparisons completed successfully.\n")
+
+# ============================================================
+# 11. Close logs
+# ============================================================
+
+cat("\nReproducibility statistics completed successfully.\n")
 
 sink(type = "message")
 sink()
 close(log_con)
-
-cat("Reproducibility statistics completed successfully.\n")

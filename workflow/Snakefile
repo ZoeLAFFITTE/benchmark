@@ -749,7 +749,10 @@ rule stats_repro:
         desc=f"{OUT}/aggregated/stats/descriptive.tsv",
         figure_bassin_pop_both=f"{OUT}/aggregated/stats/figure_bassin_pop_both.svg",
         figure_single=f"{OUT}/aggregated/stats/d.jpeg",
-        figure_population=f"{OUT}/aggregated/stats/c.jpeg"
+        figure_population=f"{OUT}/aggregated/stats/c.jpeg",
+        tab=f"{OUT}/aggregated/stats/tableau_methodes.tex",
+        friedman=f"{OUT}/aggregated/stats/test_friedman_comparaison_methodes.tsv",
+        posthoc=f"{OUT}/aggregated/stats/tests_posthoc_wilcoxon_holm.tsv"
 
     singularity:
         CONTAINERS["r"]

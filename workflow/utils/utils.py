@@ -6,6 +6,22 @@ Quelques fonctions utilitaires.
 import numpy as np
 import networkx as nx
 
+
+def get_border_mask(faces, labels):
+    """
+    Compute a one-vertex-wide boundary mask between distinct basins.
+    """
+    mask = np.zeros(len(labels), dtype=bool)
+
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        va, vb = faces[:, a], faces[:, b]
+        diff = labels[va] != labels[vb]
+        lower = np.where(labels[va] < labels[vb], va, vb)
+        mask[lower[diff]] = True
+
+    return mask
+
+
 def build_basin_graph(
     basin,
     skeletons,

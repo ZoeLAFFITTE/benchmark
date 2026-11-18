@@ -659,68 +659,52 @@ rule stats_desc:
         "scripts/compute_stats.py"
 
 
+
 rule application:
-
     input:
-        # Squelettes labellisés de tous les sujets
-        skeletons=lambda wc: [
-            f"{OUT}/{test}/{sub}/{wc.method_path}/{sub}.{wc.side}.skeletons_labeled.gii"
-            for test in TESTS
-            for sub in SUBJECTS
-        ],
-
-        # Bassins de tous les sujets
         basins=lambda wc: [
             f"{DATA_TEST}/{test}_{sub}_{wc.side}_{BASIN}.gii"
             for test in TESTS
             for sub in SUBJECTS
         ],
-
-        # Surfaces blanches natives de tous les sujets
         white_gii=lambda wc: [
             f"{DATA}/{RAW}/{test}/{sub}/{NATIVE}/{sub}.{wc.side}.{WHITE}.surf.gii"
             for test in TESTS
             for sub in SUBJECTS
         ],
-
-        # Statistiques descriptives de tous les sujets
         stats=lambda wc: [
             f"{OUT}/aggregated/{sub}/{wc.method_path}/{test}.{sub}.{wc.side}.stats_desc.tsv"
             for test in TESTS
             for sub in SUBJECTS
         ],
-
         sphere_reg_gii=lambda wc: [
             f"{DATA}/{RAW}/{test}/{sub}/{REG}/{sub}.{wc.side}.{SPHEREREG}.surf.gii"
             for test in TESTS
             for sub in SUBJECTS
         ],
-
         sphere_template_gii=lambda wc: f"{ATLAS}.{wc.side}.{SPHERETEMP}.surf.gii",
         white_template_gii=lambda wc: f"{ATLAS}.{wc.side}.{WHITETEMP}.surf.gii"
+
 
     conda:
         ENVIRONMENTS["slam"]
 
     output:
         individual_plots=[
-            f"{OUT}/aggregated/{{sub}}/{method_path}/plots/{{sub}}.{{side}}.application.html"
-            for method_path in METHOD_PATHS
+            f"{OUT}/aggregated/{sub}/{{method_path}}/plots/{test}.{sub}.{{side}}.application.html"
+            for test in TESTS
+            for sub in SUBJECTS
         ],
-        pop_plot=(
-            f"{OUT}/aggregated/{{method_path}}/plots/{{side}}.application.html"
-        )
+
+        pop_plot=f"{OUT}/aggregated/{{method_path}}/plots/{{side}}.application.html"
 
     params:
         subjects=SUBJECTS,
-        tests=TESTS,
-        method_names=METHOD_PATHS
+        tests=TESTS
 
-    log:
-        f"{OUT}/aggregated/{{method_path}}/plots/{{side}}.application.log"
+    log: f"{OUT}/aggregated/{{method_path}}/plots/{{side}}.application.log"
 
-    message:
-        "postproc --> application() (method={wildcards.method_path}, side={wildcards.side})"
+    message: "postproc --> application() (method={wildcards.method_path}, side={wildcards.side})"
 
     script:
         "scripts/application.py"

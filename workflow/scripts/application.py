@@ -30,7 +30,6 @@ if __name__ == "__main__":
         subjects = list(snakemake.params.subjects)
         tests = list(snakemake.params.tests)
 
-        skeleton_paths = list(snakemake.input.skeletons)
         basin_paths = list(snakemake.input.basins)
         white_paths = list(snakemake.input.white_gii)
         stats_paths = list(snakemake.input.stats)
@@ -45,29 +44,15 @@ if __name__ == "__main__":
 
         # 3. On compute les texture pour le template pour la représentation aprox
         idx = 0
-
+        pop = []
         for test in tests:
             for subject in subjects:
-                skeletons = sio.load_texture(skeleton_paths[idx]).darray[0]
                 basins = sio.load_texture(basin_paths[idx]).darray[0]
                 white = sio.load_mesh(white_paths[idx])
                 sphere_reg = sio.load_mesh(sphere_reg_paths[idx])
                 stats = pd.read_csv(stats_paths[idx], sep="\t")
 
-                # Plot1
-                boundary = get_border_mask(white.faces, basins).astype(int)
-                boundary_tex = np.zeros(basins, dtype=int)
-                boundary_tex[boundary == 1] = 1
-
-                boundary_template = np.asarray(
-                    srem.texture_spherical_interpolation_nearest_neighbor(
-                        sphere_reg,
-                        sphere_template,
-                        boundary_tex,
-                    ),
-                    dtype=float,
-                )
-
+                # Project basin labels onto template
                 basins_template = np.asarray(
                     srem.texture_spherical_interpolation_nearest_neighbor(
                         sphere_reg,
@@ -77,25 +62,33 @@ if __name__ == "__main__":
                     dtype=float,
                 )
 
-                #pour basins, remplacer la val de chaque label pas sa stat associée
+                # Replace basin labels with morphometric values
                 for label in np.unique(basins_template):
                     stats_basin = stats[
                         stats["basin"] == label
                     ]
                     label = int(label)
-                    area = stats_basin["area_basin"]
-                    n_leaves = stats_basin["n_leaves_basin"]
+                    
+                    area = stats_basin["area_basin"].iloc[0]
+                    n_leaves = stats_basin["n_leaves_basin"].iloc[0]
 
                     if area > 0 and np.isfinite(n_leaves):
-                        basins_template[basins == label] = n_leaves / np.sqrt(area)
+                        basins_template[basins_template == label] = n_leaves / np.sqrt(area)
                 
-                label_max = float(np.max(basins_template))
-                basins_template[boundary_template == 1] = label_max
+                # Store individual map
+                pop.append(basins_template.copy())
 
+                # Compute basin boundaries
+                label_max = float(np.max(basins_template))
+                boundary = utils.get_border_mask(white_template.faces, basins_template).astype(int)
+                basins_template[boundary == 1] = label_max
+
+                # Plot individual plot
                 fig_1 = splt.plot_mesh(
                     {
                         "vertices": white_template.vertices,
                         "faces": white_template.faces,
+                        "title": f"Leaves / √Basin area — {method}, {subject}, {side}, {test}",
                     },
                     {
                         "values": basins_template,
@@ -103,9 +96,34 @@ if __name__ == "__main__":
                     },
                     {
                         "template": None,
-                        "colorscale": "Turbo"
+                        "colorscale": "Turbo",
+                        "colorbar_label": "Leaves / √Basin area (mm⁻¹)"
                     },
                     caption=False,
                 )
-                fig_1.write_html(snakemake.output.individual_plots)
+                fig_1.write_html(snakemake.output.individual_plots[idx])
+
+                idx += 1
+        
+        # Plot population mean
+        stack = np.stack(pop, axis=0)
+        mean_all = np.mean(stack, axis=0)
+        fig_2 = splt.plot_mesh(
+            {
+                "vertices": white_template.vertices,
+                "faces": white_template.faces,
+                "title": f"Leaves / √Basin area — {method}, Mean pop, {side}",
+            },
+            {
+                "values": mean_all,
+                "mode": "vertex",
+            },
+            {
+                "template": None,
+                "colorscale": "Turbo",
+                "colorbar_label": "Leaves / √Basin area (mm⁻¹)"
+            },
+            caption=False,
+        )
+        fig_2.write_html(snakemake.output.pop_plot)
                 

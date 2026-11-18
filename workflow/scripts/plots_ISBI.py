@@ -17,21 +17,6 @@ import networkx as nx
 from utils import utils
 
 
-def get_border_mask(faces, labels):
-    """
-    Compute a one-vertex-wide boundary mask between distinct basins.
-    """
-    mask = np.zeros(len(labels), dtype=bool)
-
-    for a, b in ((0, 1), (1, 2), (2, 0)):
-        va, vb = faces[:, a], faces[:, b]
-        diff = labels[va] != labels[vb]
-        lower = np.where(labels[va] < labels[vb], va, vb)
-        mask[lower[diff]] = True
-
-    return mask
-
-
 def create_base_figure(mesh, values, cmin=None, cmax=None):
     """
     Create a base figure of the white mesh colored by DPF.
@@ -190,7 +175,7 @@ if __name__ == "__main__":
         basins = sio.load_texture(snakemake.input.basins_white_gii).darray[0]
 
         # 4. Prepare DPF and basin boundaries
-        boundary = get_border_mask(white.faces, basins).astype(int)
+        boundary = utils.get_border_mask(white.faces, basins).astype(int)
         dpf_min = float(np.min(dpf))
         dpf_max = float(np.max(dpf))
         dpf_boundary = dpf.copy()

@@ -142,7 +142,7 @@ def compute_sulci_hausdorff(
     results = []
 
     for label_test, label_retest in df_overlap[
-        ["HCP_test_basin", "HCP_retest_basin"]
+        ["label_HCP_test", "label_HCP_retest"]
     ].itertuples(index=False, name=None):
 
         test_mask = test_texture == label_test
@@ -268,13 +268,13 @@ results = compute_sulci_hausdorff(
 method = snakemake.wildcards.method_path.split("/")[0]
 
 # Add method column
-results["methode"] = method
+results["method"] = method
 
 # Save results
 RESULT_COLS = [
     "subject",
     "side",
-    "methode",
+    "method",
     "label_HCP_test",
     "label_HCP_retest",
     "n_HCP_test",

@@ -5,22 +5,17 @@ Application morphométrique vs complexité des SFG, ISBI 2026.
 """
 
 import sys
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import slam.io as sio
 import slam.plot as splt
-import networkx as nx
 import slam.remeshing as srem
 from utils import utils
 
 
 if __name__ == "__main__":
 
-    with open(snakemake.log[0], "w", buffering=1) as log_file:
+    with open(snakemake.log[0], "w", buffering=1, encoding="utf-8") as log_file:
 
         sys.stderr = sys.stdout = log_file
 
@@ -64,13 +59,20 @@ if __name__ == "__main__":
 
                 # Replace basin labels with morphometric values
                 for label in np.unique(basins_template):
+
+                    if label == 0:
+                        continue
+
                     stats_basin = stats[
                         stats["basin"] == label
                     ]
                     label = int(label)
                     
                     area = stats_basin["area_basin"].iloc[0]
+                    print(f"area basin {label}: {area}")
                     n_leaves = stats_basin["n_leaves_basin"].iloc[0]
+                    print(f"n_leaves basin {label}: {n_leaves}")
+                    print(f"res basin{label}: {n_leaves / np.sqrt(area)}")
 
                     if area > 0 and np.isfinite(n_leaves):
                         basins_template[basins_template == label] = n_leaves / np.sqrt(area)
@@ -83,6 +85,8 @@ if __name__ == "__main__":
                 boundary = utils.get_border_mask(white_template.faces, basins_template).astype(int)
                 basins_template[boundary == 1] = label_max
 
+                vmax = float(np.nanmax(basins_template))
+
                 # Plot individual plot
                 fig_1 = splt.plot_mesh(
                     {
@@ -93,6 +97,8 @@ if __name__ == "__main__":
                     {
                         "values": basins_template,
                         "mode": "vertex",
+                        "cmin": 0,
+                        "cmax": vmax,
                     },
                     {
                         "template": None,
@@ -108,6 +114,10 @@ if __name__ == "__main__":
         # Plot population mean
         stack = np.stack(pop, axis=0)
         mean_all = np.mean(stack, axis=0)
+
+        # Common colorbar limits
+        vmax = float(np.nanmax(mean_all))
+
         fig_2 = splt.plot_mesh(
             {
                 "vertices": white_template.vertices,
@@ -117,6 +127,8 @@ if __name__ == "__main__":
             {
                 "values": mean_all,
                 "mode": "vertex",
+                "cmin": 0,
+                "cmax": vmax,
             },
             {
                 "template": None,

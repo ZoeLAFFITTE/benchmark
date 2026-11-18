@@ -5,15 +5,11 @@ on the white mesh for the ISBI 2026 paper.
 """
 
 import sys
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import slam.io as sio
 import slam.plot as splt
-import networkx as nx
 from utils import utils
 
 
@@ -49,11 +45,13 @@ def create_skeleton_trace(
     color,
     normal_offset=0.3,
 ):
+    """
+    Reconstruct the skeleton trace.
+    """
 
     x, y, z = [], [], []
 
     vertices = white.vertices + normal_offset * white.vertex_normals
-    faces = np.asarray(white.faces)
     edges = white.edges_unique
 
     for basin in reproducible_basins:
@@ -102,8 +100,8 @@ def create_skeleton_trace(
         y=y,
         z=z,
         mode="lines+markers",
-        line=dict(width=10, color=color),
-        marker=dict(size=2, color=color),
+        line={"width": 10, "color": color},
+        marker={"size": 2, "color": color},
         name=method_name,
         showlegend=True,
     )
@@ -126,7 +124,7 @@ def get_reproducible_basins(match_tsv, test, threshold):
         df_matches["overlap"] >= threshold
     ]
 
-    basin_column = f"{test}_basin"
+    basin_column = f"label_{test}"
 
     reproducible_basins = (
         df_reproducible[basin_column]
@@ -145,7 +143,7 @@ def get_reproducible_basins(match_tsv, test, threshold):
 
 if __name__ == "__main__":
 
-    with open(snakemake.log[0], "w", buffering=1) as log_file:
+    with open(snakemake.log[0], "w", buffering=1, encoding="utf-8") as log_file:
 
         sys.stderr = sys.stdout = log_file
 

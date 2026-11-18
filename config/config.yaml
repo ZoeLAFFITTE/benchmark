@@ -52,14 +52,14 @@ software:
 # Containers
 # ------------------------------------------------------------------
 containers:
+  r: "../images/480b31f5e468-2026-11-18-0c7d596fb490.sif" 
   # mindboggle: "../images/mindboggle.sif"
   # trace: "../images/trace.sif"
   # able: "../images/able.sif"
   # brainvisa: "/hpc/shared/apps/x86_64/softs/singularity_images/brainvisa-5.0.4.sif"
-  # matlab: ""
-  # singularity: ""
 
   mindboggle: "docker://nipy/mindboggle"
   trace: "docker://ilwoolyu/cmorph:1.7"
   able: "docker://albertofpena/able:latest"
   brainvisa: "https://brainvisa.info/download/brainvisa-5.0.4.sif"
+  #r: "docker://rocker/tidyverse"

@@ -4,14 +4,9 @@ Calcule des stats descriptives des squelettes produits par chaque methode.
 """
 
 import sys
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import slam.io as sio
-import slam.plot as splt
 import networkx as nx
 from utils import utils
 
@@ -119,7 +114,7 @@ def compute_graph_metrics(G):
 
 if __name__ == "__main__":
 
-    with open(snakemake.log[0], "w", buffering=1) as log_file:
+    with open(snakemake.log[0], "w", buffering=1, encoding="utf-8") as log_file:
 
         sys.stderr = sys.stdout = log_file
 
@@ -128,6 +123,14 @@ if __name__ == "__main__":
         sub = snakemake.wildcards.sub
         side = snakemake.wildcards.side
         method = snakemake.wildcards.method_path
+
+        alpha = np.nan
+        beta = np.nan
+        if "SFG" in method:
+            alpha = float(method.split("/")[1].split("d")[1].split("_")[0])
+            beta = float(method.split("l")[1])
+
+        method = snakemake.wildcards.method_path.split("/")[0]
 
         # 2. Load white mesh and textures
         white = sio.load_mesh(snakemake.input.white_gii)
@@ -149,12 +152,22 @@ if __name__ == "__main__":
         area_mesh = white.area
         volume_mesh = white.volume
         cbrt_vol = np.cbrt(np.abs(volume_mesh)) #racine cubique du volume
+        #test
+        faces = np.asarray(white.faces)
+        face_areas = np.asarray(white.area_faces)
+        face_labels = basins[faces]
+        same_label = np.all(face_labels == face_labels[:, :1], axis=1)
+        valid = same_label & (face_labels[:, 0] > 0)
 
-        alpha = np.nan
-        beta = np.nan
-        if "SFG" in method:
-            alpha = float(method.split("/")[1].split("d")[1].split("_")[0])
-            beta = float(method.split("l")[1])
+        labels = face_labels[valid, 0]
+        areas = face_areas[valid]
+
+        area_by_basin = (
+            pd.Series(areas)
+            .groupby(labels)
+            .sum()
+            .to_dict()
+        )
 
         #métriques par bassin
         for basin in np.unique(basins):
@@ -182,8 +195,12 @@ if __name__ == "__main__":
                 metrics = compute_graph_metrics(skeleton_graph)
 
             # 3. Aire du bassin
-            basin_mask = skeletons == basin
+            #basin_mask = skeletons == basin
+            #area_basin = np.sum(vert_area[basin_mask])
+
+            basin_mask = basins == basin
             area_basin = np.sum(vert_area[basin_mask])
+            #area_basin = area_by_basin.get(basin, np.nan)
 
             # 4. Stockage des résultats
             results.append({
@@ -210,7 +227,7 @@ if __name__ == "__main__":
 
                 "area_basin": area_basin,
             })
-    
+
         df_results = pd.DataFrame(results)
         df_results.to_csv(
             snakemake.output.results_tsv,

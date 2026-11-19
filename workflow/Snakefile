@@ -397,15 +397,20 @@ if STEPS.get("application", False):
                 f"{OUT}/aggregated/{method_path}/plots/{side}.application.html"
             )
 
-if STEPS.get("stats_repro", False):
+if STEPS.get("stats_app", False):
     FINAL_TARGETS.extend([
         f"{OUT}/aggregated/stats/matching.tsv",
         f"{OUT}/aggregated/stats/hausdorff.tsv",
         f"{OUT}/aggregated/stats/descriptive.tsv",
         f"{OUT}/aggregated/stats/figure_bassin_pop_both.svg",
         f"{OUT}/aggregated/stats/d.jpeg",
-        f"{OUT}/aggregated/stats/c.jpeg"
+        f"{OUT}/aggregated/stats/c.jpeg",
+        f"{OUT}/aggregated/stats/test_friedman_comparaison_methodes.tsv",
+        f"{OUT}/aggregated/stats/tests_posthoc_wilcoxon_holm.tsv",
     ])
+
+if STEPS.get("stats_concordance", False):
+    FINAL_TARGETS.extend([f"{OUT}/aggregated/stats/tableau_methodes.tex"])
 
 # -----------------------------------------------------------------------------
 # Rule all
@@ -440,11 +445,11 @@ rule fs_convert_gii_vtk:
 # 2. Compute textures ---------------------------------------------------------
 rule compute_textures:
     input:
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii"
+        white_gii=rules.fs_convert_gii_vtk.input.white_gii
 
     output:
         dpf_white_gii=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
-        curv_white_gii=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.mean_curv.gii"
+        curv_white_gii=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.mean_curv.gii",
 
     conda: ENVIRONMENTS["slam"]
 
@@ -453,7 +458,7 @@ rule compute_textures:
     message :
         "preprocessing --> compute_textures() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
-    script:"scripts/compute_textures.py"
+    script:"scripts/python/compute_textures.py"
 
 
 # =============================================================================
@@ -462,8 +467,8 @@ rule compute_textures:
 # 0. Zoé_algo -----------------------------------------------------------------
 rule SFG:
     input:
-        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+        white_gii = rules.fs_convert_gii_vtk.input.white_gii,
+        dpf_white_gii = rules.compute_textures.output.dpf_white_gii,
         basins_white_gii = f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
 
     output:
@@ -483,7 +488,7 @@ rule SFG:
     benchmark:
         f"{OUT}/{{test}}/{{sub}}/SFG/d{{sdist}}_l{{slen}}/{{sub}}.{{side}}.SFG.benchmark.txt"
     script:
-        "scripts/zoe_algo.py"
+        "scripts/python/sfg.py"
 
 
 #1. Trace --------------------------------------------------------------------
@@ -492,8 +497,8 @@ include: "rules/trace.smk"
 #2. Cachia -------------------------------------------------------------------
 rule cachia:
     input:
-        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        dpf_white_gii = f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+        white_gii = rules.fs_convert_gii_vtk.input.white_gii,
+        dpf_white_gii = rules.compute_textures.output.dpf_white_gii,
 
     output:
         skeletons = f"{OUT}/{{test}}/{{sub}}/cachia/{{sub}}.{{side}}.skeletons.gii",
@@ -511,7 +516,7 @@ rule cachia:
         CONTAINERS["brainvisa"]
 
     shell:
-        """
+        r"""
         mkdir -p {OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa
 
         BRAINVISA_USER_DIR={OUT}/{wildcards.test}/{wildcards.sub}/cachia/brainvisa \
@@ -562,13 +567,13 @@ rule overlap_basins:
         "postproc --> overlap_basins() (sub={wildcards.sub}, side={wildcards.side})"
 
     script:
-        "scripts/compute_overlap.py"
+        "scripts/python/compute_overlap.py"
 
 #2. Reprojection des labels sur les sillons ------------------------------------
 rule projected_labels:
     input:
         sphere_reg_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
-        basins_gii=f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+        basins_gii=rules.SFG.input.basins_white_gii,
         skeleton=f"{OUT}/{{test}}/{{sub}}/{{method_path}}/{{sub}}.{{side}}.skeletons.gii",
 
     output:
@@ -584,14 +589,14 @@ rule projected_labels:
         "postproc --> projected_labels() (method={wildcards.method_path}, sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     script:
-        "scripts/compute_labels.py"
+        "scripts/python/compute_labels.py"
 
 #3. hausdorff ------------------------------------------------------------------
 rule hausdorff_dist:
     input:
-        match_tsv=f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
-        sphere_reg_gii_test=f"{DATA}/{RAW}/HCP_test/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
-        sphere_reg_gii_retest=f"{DATA}/{RAW}/HCP_retest/{{sub}}/{REG}/{{sub}}.{{side}}.{SPHEREREG}.surf.gii",
+        match_tsv=rules.overlap_basins.output.match_tsv,
+        sphere_reg_gii_test=rules.overlap_basins.input.sphere_reg_test_gii,
+        sphere_reg_gii_retest=rules.overlap_basins.input.sphere_reg_retest_gii,
         skeletons_labeled_test=f"{OUT}/HCP_test/{{sub}}/{{method_path}}/{{sub}}.{{side}}.skeletons_labeled.gii",
         skeletons_labeled_retest=f"{OUT}/HCP_retest/{{sub}}/{{method_path}}/{{sub}}.{{side}}.skeletons_labeled.gii",
 
@@ -609,15 +614,15 @@ rule hausdorff_dist:
         "postproc --> hausdorff_dist() (method={wildcards.method_path}, sub={wildcards.sub}, side={wildcards.side})"
 
     script:
-        "scripts/compute_hausdorff.py"
+        "scripts/python/compute_hausdorff.py"
 
 #4. plots ISBI ---------------------------------------------------------------------
 rule plot_ISBI:
     input:
-        match_tsv=f"{OUT}/aggregated/{{sub}}/{{sub}}.{{side}}.matching.tsv",
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        dpf_white_gii=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
-        basins_white_gii=f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
+        match_tsv=rules.overlap_basins.output.match_tsv,
+        white_gii=rules.fs_convert_gii_vtk.input.white_gii,
+        dpf_white_gii=rules.compute_textures.output.dpf_white_gii,
+        basins_white_gii=rules.SFG.input.basins_white_gii,
         skeletons_labeled=lambda wc: [
             f"{OUT}/{wc.test}/{wc.sub}/{mp}/{wc.sub}.{wc.side}.skeletons_labeled.gii"
             for mp in METHOD_PATHS
@@ -646,14 +651,14 @@ rule plot_ISBI:
         "postproc --> plot_ISBI() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     script:
-        "scripts/plots_ISBI.py"
+        "scripts/python/plots_ISBI.py"
 
 rule stats_desc:
     input:
-        skeletons_labeled=f"{OUT}/{{test}}/{{sub}}/{{method_path}}/{{sub}}.{{side}}.skeletons_labeled.gii",
-        white_gii=f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        basins_gii=f"{DATA_TEST}/{{test}}_{{sub}}_{{side}}_{BASIN}.gii",
-        dpf_white_gii=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.DPF_star.gii",
+        skeletons_labeled=rules.projected_labels.output.skeletons_labeled,
+        white_gii=rules.fs_convert_gii_vtk.input.white_gii,
+        basins_gii=rules.SFG.input.basins_white_gii,
+        dpf_white_gii=rules.compute_textures.output.dpf_white_gii,
 
     output:
         results_tsv=f"{OUT}/aggregated/{{sub}}/{{method_path}}/{{test}}.{{sub}}.{{side}}.stats_desc.tsv",
@@ -666,7 +671,7 @@ rule stats_desc:
         "postproc --> stats_desc() (method={wildcards.method_path}, sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     script:
-        "scripts/compute_stats.py"
+        "scripts/python/compute_stats.py"
 
 
 rule application:
@@ -715,62 +720,80 @@ rule application:
     message: "postproc --> application() (method={wildcards.method_path}, side={wildcards.side})"
 
     script:
-        "scripts/application.py"
+        "scripts/python/application.py"
 
 
-rule stats_repro:
+rule stats_application:
     input:
         match_tsv=[
             f"{OUT}/aggregated/{sub}/{sub}.{side}.matching.tsv"
             for sub in SUBJECTS
             for side in SIDE
         ],
-
         hausdorff_tsv=[
-            f"{OUT}/aggregated/{sub}/{method_path}/"
-            f"{sub}.{side}.{SPHERETEMP}.hausdorff.tsv"
+            f"{OUT}/aggregated/{sub}/{method_path}/{sub}.{side}.{SPHERETEMP}.hausdorff.tsv"
             for sub in SUBJECTS
             for side in SIDE
             for method_path in METHOD_PATHS
         ],
-
         desc_tsv=[
-            f"{OUT}/aggregated/{sub}/{method_path}/"
-            f"{test}.{sub}.{side}.stats_desc.tsv"
+            f"{OUT}/aggregated/{sub}/{method_path}/{test}.{sub}.{side}.stats_desc.tsv"
             for sub in SUBJECTS
             for side in SIDE
             for method_path in METHOD_PATHS
             for test in TESTS
         ],
-
     output:
         matching=f"{OUT}/aggregated/stats/matching.tsv",
         hausdorff=f"{OUT}/aggregated/stats/hausdorff.tsv",
         desc=f"{OUT}/aggregated/stats/descriptive.tsv",
         figure_bassin_pop_both=f"{OUT}/aggregated/stats/figure_bassin_pop_both.svg",
-        figure_single=f"{OUT}/aggregated/stats/d.jpeg",
+        #figure_single=f"{OUT}/aggregated/stats/d.jpeg",
+        figure_single=[
+            f"{OUT}/aggregated/{sub}/plots/{sub}.d.jpeg"
+            for sub in SUBJECTS
+        ],
         figure_population=f"{OUT}/aggregated/stats/c.jpeg",
-        tab=f"{OUT}/aggregated/stats/tableau_methodes.tex",
         friedman=f"{OUT}/aggregated/stats/test_friedman_comparaison_methodes.tsv",
-        posthoc=f"{OUT}/aggregated/stats/tests_posthoc_wilcoxon_holm.tsv"
+        posthoc=f"{OUT}/aggregated/stats/tests_posthoc_wilcoxon_holm.tsv",
 
     singularity:
         CONTAINERS["r"]
 
     params:
+        method_names=METHOD_PATHS,
         subjects=SUBJECTS,
-        tests=TESTS,
-        subject="130518",
-        method_names=METHOD_PATHS
 
     log:
-        f"{OUT}/aggregated/stats/stats_repro.log"
+        f"{OUT}/aggregated/stats/stats_repro_figures.log",
 
     message:
-        "postproc --> stats_repro()"
+        "postproc --> stats_repro_figures()"
 
     script:
-        "scripts/stats.R"
+        "scripts/r/stats_app.R"
+
+
+rule stats_concordance:
+    input:
+        matching=rules.stats_application.output.matching,
+        hausdorff=rules.stats_application.output.hausdorff,
+        desc=rules.stats_application.output.desc,
+
+    output:
+        tab=f"{OUT}/aggregated/stats/tableau_methodes.tex",
+
+    singularity:
+        CONTAINERS["r"]
+
+    log:
+        f"{OUT}/aggregated/stats/stats_repro_table.log",
+
+    message:
+        "postproc --> stats_repro_table()"
+
+    script:
+        "scripts/r/stats_concordance.R"
 
 
 # # rule evol:

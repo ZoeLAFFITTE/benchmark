@@ -1,7 +1,7 @@
 ## 1. Mean curvature ----------------------------------------------------------
 rule mindboggle_compute_mean_curvature:
     input:
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk",
+        pial_vtk=rules.fs_convert_gii_vtk.output.pial_vtk,
     output:
         curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
     singularity:
@@ -29,7 +29,7 @@ rule mindboggle_compute_mean_curvature:
 ## 2. Travel depth ------------------------------------------------------------
 rule mindboggle_compute_travel_depth:
     input:
-        pial_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{PIAL}.vtk"
+        pial_vtk=rules.fs_convert_gii_vtk.output.pial_vtk
 
     output:
         depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
@@ -56,7 +56,7 @@ rule mindboggle_compute_travel_depth:
 ## 3. Rescal depth ------------------------------------------------------------
 rule mindboggle_compute_rescale_depth:
     input:
-        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk"
+        depth_pial_vtk=rules.mindboggle_compute_travel_depth.output.depth_pial_vtk
 
     output:
         depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk"
@@ -88,9 +88,9 @@ rule mindboggle_compute_rescale_depth:
 ## 4. Depth depth threshold ---------------------------------------------------
 rule mindboggle_compute_fundi:
     input:
-        curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
-        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
-        depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
+        curv_pial_vtk=rules.mindboggle_compute_mean_curvature.output.curv_pial_vtk,
+        depth_pial_vtk=rules.mindboggle_compute_travel_depth.output.depth_pial_vtk,
+        depth_pial_vtk_res=rules.mindboggle_compute_rescale_depth.output.depth_pial_vtk_res,
     
     output:
         folds_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
@@ -123,12 +123,12 @@ rule mindboggle_compute_fundi:
 # 5. VTIK -> GIFTII ------------------------------------------------------------
 rule mindboggle_convert_gii:
     input:
-        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        curv_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mean_curv.vtk",
-        depth_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth.vtk",
-        depth_pial_vtk_res=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.depth_rescaled.vtk",
-        folds_pial_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.folds.vtk",
-        skeletons_vtk=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.skeletons.vtk",
+        white_gii=rules.fs_convert_gii_vtk.input.white_gii,
+        curv_pial_vtk=rules.mindboggle_compute_mean_curvature.output.curv_pial_vtk,
+        depth_pial_vtk=rules.mindboggle_compute_travel_depth.output.depth_pial_vtk,
+        depth_pial_vtk_res=rules.mindboggle_compute_rescale_depth.output.depth_pial_vtk_res,
+        folds_pial_vtk=rules.mindboggle_compute_fundi.output.folds_pial_vtk,
+        skeletons_vtk=rules.mindboggle_compute_fundi.output.skeletons_vtk,
 
     output:
         curv_pial_gii=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{WHITE}.mean_curv.gii",
@@ -145,16 +145,16 @@ rule mindboggle_convert_gii:
         "postproc--> Mindboggle/convert_gii() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})"
 
     script:
-        f"{workflow.basedir}/scripts/mindboggle_convert_scalar_gii.py"
+        f"../scripts/python/mindboggle_convert_scalar_gii.py"
 
 
 rule mindboggle_aggregate_log:
     input:
-        curv=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_mean_curvature.log",
-        depth=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_travel_depth.log",
-        depth_rescaled=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_rescale_depth.log",
-        skeletons=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.{PIAL}.mindboggle_compute_fundi.log",
-        convert=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle_convert_gii.log",
+        curv=rules.mindboggle_compute_mean_curvature.log,
+        depth=rules.mindboggle_compute_travel_depth.log,
+        depth_rescaled=rules.mindboggle_compute_rescale_depth.log,
+        skeletons=rules.mindboggle_compute_fundi.log,
+        convert=rules.mindboggle_convert_gii.log,
 
     output:
         log=f"{OUT}/{{test}}/{{sub}}/mindboggle/{{sub}}.{{side}}.mindboggle.log"

@@ -1,11 +1,11 @@
 rule trace:
     input:
-        white_vtk=f"{OUT}/{{test}}/{{sub}}/preproc/{{sub}}.{{side}}.{WHITE}.vtk"
+        white_vtk=rules.fs_convert_gii_vtk.output.white_vtk,
 
     output:
-        skeletons=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary"
+        skeletons=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary",
 
-    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.trace.log"
+    log: f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.trace.log",
 
     params:
         output_prefix=lambda wc: f"{OUT}/{wc.test}/{wc.sub}/trace/{wc.sub}.{wc.side}.{WHITE}"
@@ -32,8 +32,8 @@ rule trace:
 # 2. Trace -> GIFTII ------------------------------------------------------------
 rule trace_convert_scalar_gii:
     input:
-        white_gii = f"{DATA}/{RAW}/{{test}}/{{sub}}/{NATIVE}/{{sub}}.{{side}}.{WHITE}.surf.gii",
-        skeletons=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.{WHITE}.scurve.bary",
+        white_gii = rules.fs_convert_gii_vtk.input.white_gii,
+        skeletons=rules.trace.output.skeletons,
 
     output:
         skeletons=f"{OUT}/{{test}}/{{sub}}/trace/{{sub}}.{{side}}.skeletons.gii",
@@ -48,4 +48,4 @@ rule trace_convert_scalar_gii:
         "postproc --> Trace/trace_convert_scalar_gii() (sub={wildcards.sub}, side={wildcards.side}, test={wildcards.test})",
 
     script:
-        "../scripts/trace_convert_scalar_gii.py"
+        "../scripts/python/trace_convert_scalar_gii.py"
